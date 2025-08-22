@@ -418,6 +418,7 @@ let profileChart = null;
             pointHoverRadius: 5,
             fill: '+2',
             order: 1
+          }
         ],
       },
       options: {
@@ -437,7 +438,7 @@ let profileChart = null;
               font: {
                 size: 12
               },
-              filter: function(item, chart) {
+              filter: function(item) {
                 // Filtrer les légendes pour ne pas afficher les datasets vides
                 return item.text !== '';
               }
