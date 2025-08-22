@@ -1,7 +1,7 @@
 // Planificateur Bühlmann ZH-L16C + Gradient Factors (UI moderne)
+// - Version multi-stops avec paliers multiples de 3m
 // - Formule de plafond corrigée (Erik Baker):
 //   pAmbMin = (Ptiss - GF * a) / (GF / b + 1 - GF)
-// - Paliers en multiples de 3 m, remontée 9 m/min
 // - Options: lastStopDepth (3 ou 6 m), minLastStopMinutes
 // - Graphique avec profil + plafond GF en temps réel
 // - Validation UX douce et badge de validation
@@ -55,20 +55,15 @@ let profileChart = null;
     }
   }
 
-  // pAmbMin via Baker + GF
-  // Formule corrigée : pAmbMin = (Ptiss - GF * a) / (GF / b + 1 - GF)
+  // Baker + GF
   function ceilingForComp(pN2, pHe, gf, i) {
     const pn = Math.max(0, pN2), ph = Math.max(0, pHe);
     const sum = pn + ph || 1e-9;
     const a = (A_N2[i] * pn + A_HE[i] * ph) / sum;
     const b = (B_N2[i] * pn + B_HE[i] * ph) / sum;
     const pt = pn + ph;
-
-    // ----- FORMULE CORRIGÉE D'ERIK BAKER -----
-    // pAmbMin = (Pt - GF * a) / (GF / b + 1 - GF)
-    const pAmbMin = (pt - gf * a) / (gf / b + 1 - gf);
-    const ceilingM = Math.max(0, (pAmbMin - SURFACE) / BAR_PER_M);
-    return ceilingM;
+    const pAmbMin = (pt - gf * a) / (gf / b + (1 - gf));
+    return Math.max(0, (pAmbMin - SURFACE) / BAR_PER_M); // ceiling en mètres
   }
 
   function overallCeiling(state, gf) {
@@ -80,69 +75,114 @@ let profileChart = null;
     return worst;
   }
 
-  function gfAtDepth(depthM, gfLow, gfHigh, firstCeiling) {
-    const firstStopDepth = Math.ceil(firstCeiling / STOP_STEP) * STOP_STEP;
-    if (firstStopDepth <= 0) return gfHigh;
-    const frac = Math.max(0, Math.min(1, 1 - depthM / firstStopDepth));
+  // GF interpolé du premier palier → surface
+  function gfAtDepth(depthM, gfLow, gfHigh, firstStopDepth) {
+    const fs = Math.max(0, Math.ceil(firstStopDepth / STOP_STEP) * STOP_STEP);
+    if (fs <= 0) return gfHigh;
+    const frac = Math.max(0, Math.min(1, 1 - depthM / fs));
     return gfLow + (gfHigh - gfLow) * frac;
   }
 
-  // ----- Planificateur minimal (paliers en sommet uniquement) -----
+  /**
+   * Planification multi-stops (3 m) à la Bühlmann+GF
+   * - remonte vers le premier palier (GF low)
+   * - tient chaque palier jusqu'à autorisation d'aller 3 m plus haut
+   * - dernier palier à 3 ou 6 m selon options
+   */
   function planDive(depthM, bottomMin, gas, gfLowPct, gfHighPct, opts) {
-    const gfLow = gfLowPct / 100, gfHigh = gfHighPct / 100;
-    const lastStopDepth = (opts && opts.lastStopDepth) || 3; // 3 m par défaut
-    const minLast = Math.max(0, Math.floor((opts && opts.minLastStopMinutes) || 0));
+    const gfL = gfLowPct / 100, gfH = gfHighPct / 100;
+    const lastStopDepth = Math.max(0, (opts?.lastStopDepth ?? 3));
+    const minLast = Math.max(0, Math.floor(opts?.minLastStopMinutes ?? 0));
 
-    const state = initTissues();
-    // Segment fond
-    updateConstantDepth(state, depthM, gas, bottomMin);
+    const st = initTissues();
+    let tts = 0;
+    let cur = 0;
 
-    // Plafond initial avec GF bas
-    const firstCeil = overallCeiling(state, gfLow);
+    // Descente (simulation minute par minute pour cohérence tissulaire)
+    if (depthM > 0) {
+      let mins = Math.ceil(depthM / DESCENT_RATE);
+      for (let i = 0; i < mins; i++) {
+        const next = Math.min(depthM, cur + DESCENT_RATE);
+        updateConstantDepth(st, next, gas, 1);
+        cur = next; tts++;
+      }
+    }
+
+    // Fond
+    if (bottomMin > 0) {
+      updateConstantDepth(st, depthM, gas, bottomMin);
+      cur = depthM; tts += bottomMin;
+    }
+
+    // Premier plafond avec GF bas
+    const firstCeil = overallCeiling(st, gfL);
+    let firstStop = Math.max(lastStopDepth, Math.ceil(firstCeil / STOP_STEP) * STOP_STEP);
+
+    // Remontée vers le premier palier
+    if (cur > firstStop) {
+      let mins = Math.ceil((cur - firstStop) / ASCENT_RATE);
+      for (let i = 0; i < mins; i++) {
+        const next = Math.max(firstStop, cur - ASCENT_RATE);
+        updateConstantDepth(st, next, gas, 1);
+        cur = next; tts++;
+      }
+    }
 
     const stops = [];
-    let current = depthM;
-    let tts = 0;
+    let stopDepth = firstStop;
 
-    // Remontée vers le dernier palier (pas de deep stops dans cette version)
-    if (current > lastStopDepth) {
-      const minutes = Math.ceil((current - lastStopDepth) / ASCENT_RATE);
-      for (let i = 0; i < minutes; i++) {
-        const nextD = Math.max(current - ASCENT_RATE, lastStopDepth);
-        updateConstantDepth(state, nextD, gas, 1);
-        current = nextD; tts += 1;
+    // Boucle de paliers successifs  (…12→9→6→3→surface)
+    while (stopDepth >= lastStopDepth) {
+      let held = 0;
+      while (true) {
+        const nextDepth = Math.max(0, stopDepth - STOP_STEP);
+        const gfNext = gfAtDepth(nextDepth, gfL, gfH, firstStop);
+        const ceilNext = overallCeiling(st, gfNext);
+
+        const canLeave = ceilNext <= nextDepth + 1e-6 && (stopDepth !== lastStopDepth || held >= minLast);
+        if (canLeave) break;
+
+        updateConstantDepth(st, stopDepth, gas, 1);
+        held++; tts++;
+        // garde-fou
+        if (held > 360) break;
+      }
+
+      if (held > 0) {
+        stops.push({ depth: stopDepth, time: held, gf: gfAtDepth(stopDepth, gfL, gfH, firstStop) });
+      }
+
+      // Remonter de 3 m (ou vers surface si on est au dernier palier)
+      const nextDepth = Math.max(0, stopDepth - STOP_STEP);
+      if (cur > nextDepth) {
+        let mins = Math.ceil((cur - nextDepth) / ASCENT_RATE);
+        for (let i = 0; i < mins; i++) {
+          const d = Math.max(nextDepth, cur - ASCENT_RATE);
+          updateConstantDepth(st, d, gas, 1);
+          cur = d; tts++;
+        }
+      }
+      stopDepth = nextDepth;
+
+      // Si on vient de quitter le dernier palier et qu'on est déjà à 0 → fin
+      if (stopDepth === 0 && cur === 0) break;
+    }
+
+    // Par sécurité : si on a "sauté" le palier final (cas sans paliers) → fin vers 0
+    if (cur > 0) {
+      let mins = Math.ceil(cur / ASCENT_RATE);
+      for (let i = 0; i < mins; i++) {
+        const d = Math.max(0, cur - ASCENT_RATE);
+        updateConstantDepth(st, d, gas, 1);
+        cur = d; tts++;
       }
     }
 
-    // Tenue à lastStopDepth jusqu'à plafond <= 0 ET minLast atteint
-    let held = 0;
-    while (true) {
-      const gf = gfAtDepth(current, gfLow, gfHigh, firstCeil);
-      const ceil = overallCeiling(state, gf);
-      const need = ceil > 0 || held < minLast;
-      if (!need) break;
-      updateConstantDepth(state, current, gas, 1);
-      held += 1; tts += 1;
-      if (held > 360) break; // garde-fou
-    }
-    if (held > 0) {
-      stops.push({ depth: current, time: held, gf: gfAtDepth(current, gfLow, gfHigh, firstCeil) });
-    }
-
-    // Remontée finale vers la surface
-    if (current > 0) {
-      const minutes = Math.ceil(current / ASCENT_RATE);
-      for (let i = 0; i < minutes; i++) {
-        const nextD = Math.max(current - ASCENT_RATE, 0);
-        updateConstantDepth(state, nextD, gas, 1);
-        current = nextD; tts += 1;
-      }
-    }
-
+    // Arrondi d'affichage (contrat = minute)
     return {
-      firstStopDepth: stops.length ? stops[0].depth : 0,
+      firstStopDepth: firstStop,
       stops,
-      tts: tts
+      tts: Math.round(tts), // affichage entier
     };
   }
 
@@ -184,52 +224,76 @@ let profileChart = null;
       ceilPts.push({ x: t, y: c });
     }
 
-    // First ceiling pour le calcul GF
+    // Reconstruire le profil de remontée en suivant le plan calculé
+    cur = depthM;
     const firstCeil = overallCeiling(st, gfL/100);
+    const firstStop = plan.firstStopDepth;
 
-    // Helper pour ajouter le plafond
-    function pushCeiling() {
-      const gf = gfAtDepth(cur, gfL/100, gfH/100, firstCeil);
-      const c = overallCeiling(st, gf);
-      ceilPts.push({ x: t, y: c });
-    }
-
-    // Remontée vers dernier palier
-    const lastStopDepth = opts.lastStopDepth || 3;
-    if (cur > lastStopDepth) {
-      let mins = Math.ceil((cur - lastStopDepth)/ASCENT_RATE);
+    // Remontée vers le premier palier
+    if (plan.stops.length > 0 && cur > plan.stops[0].depth) {
+      let target = plan.stops[0].depth;
+      let mins = Math.ceil((cur - target) / ASCENT_RATE);
       for (let i = 0; i < mins; i++) {
-        const next = Math.max(cur - ASCENT_RATE, lastStopDepth);
+        const next = Math.max(cur - ASCENT_RATE, target);
         updateConstantDepth(st, next, gas, 1);
         cur = next; t++;
         points.push({ x: t, y: cur });
-        pushCeiling();
+        
+        const gf = gfAtDepth(cur, gfL/100, gfH/100, firstStop);
+        const c = overallCeiling(st, gf);
+        ceilPts.push({ x: t, y: c });
       }
     }
 
-    // Tenue du dernier palier
-    let held = 0;
-    const minLast = (opts.minLastStopMinutes|0);
-    while (true) {
-      const gf = gfAtDepth(cur, gfL/100, gfH/100, firstCeil);
-      const c = overallCeiling(st, gf);
-      if (!(c > 0 || held < minLast)) break;
-      updateConstantDepth(st, cur, gas, 1);
-      held++; t++;
-      points.push({ x: t, y: cur });
-      ceilPts.push({ x: t, y: c });
-      if (held > 360) break; // garde-fou
+    // Paliers
+    for (const stop of plan.stops) {
+      // S'assurer qu'on est au bon niveau
+      if (cur !== stop.depth) {
+        cur = stop.depth;
+      }
+      
+      // Tenir le palier
+      for (let i = 0; i < stop.time; i++) {
+        updateConstantDepth(st, stop.depth, gas, 1);
+        t++;
+        points.push({ x: t, y: stop.depth });
+        
+        const gf = gfAtDepth(stop.depth, gfL/100, gfH/100, firstStop);
+        const c = overallCeiling(st, gf);
+        ceilPts.push({ x: t, y: c });
+      }
+      
+      // Remontée vers le prochain palier ou la surface
+      const stopIdx = plan.stops.indexOf(stop);
+      const nextStop = stopIdx < plan.stops.length - 1 ? plan.stops[stopIdx + 1].depth : 0;
+      
+      if (cur > nextStop) {
+        let mins = Math.ceil((cur - nextStop) / ASCENT_RATE);
+        for (let i = 0; i < mins; i++) {
+          const next = Math.max(cur - ASCENT_RATE, nextStop);
+          updateConstantDepth(st, next, gas, 1);
+          cur = next; t++;
+          points.push({ x: t, y: cur });
+          
+          const gf = gfAtDepth(cur, gfL/100, gfH/100, firstStop);
+          const c = overallCeiling(st, gf);
+          ceilPts.push({ x: t, y: c });
+        }
+      }
     }
 
-    // Remontée finale
-    if (cur > 0) {
-      let mins = Math.ceil(cur/ASCENT_RATE);
+    // Si pas de paliers, remontée directe
+    if (plan.stops.length === 0 && cur > 0) {
+      let mins = Math.ceil(cur / ASCENT_RATE);
       for (let i = 0; i < mins; i++) {
         const next = Math.max(cur - ASCENT_RATE, 0);
         updateConstantDepth(st, next, gas, 1);
         cur = next; t++;
         points.push({ x: t, y: cur });
-        pushCeiling();
+        
+        const gf = gfAtDepth(cur, gfL/100, gfH/100, firstStop);
+        const c = overallCeiling(st, gf);
+        ceilPts.push({ x: t, y: c });
       }
     }
 
@@ -546,7 +610,11 @@ let profileChart = null;
     const p3 = planDive(40, 10, { FO2: 0.21, FHe: 0, FN2: 0.79 }, 85, 85, { lastStopDepth: 3, minLastStopMinutes: 0 });
     const ok3 = p3.stops.length > 0; // Avec la formule corrigée, palier obligatoire
 
-    const all = t1 && t2 && t3 && ok1 && ok2 && ok3;
+    // Test multi-paliers : plongée profonde
+    const p4 = planDive(60, 15, { FO2: 0.21, FHe: 0, FN2: 0.79 }, 30, 85, { lastStopDepth: 3, minLastStopMinutes: 1 });
+    const ok4 = p4.stops.length > 1; // Doit avoir plusieurs paliers
+
+    const all = t1 && t2 && t3 && ok1 && ok2 && ok3 && ok4;
 
     const resultsHTML = `
       <div class="results-card" style="max-width: 600px; margin: 0 auto;">
@@ -586,11 +654,17 @@ let profileChart = null;
                 ${ok3 ? '✓ OK' : '✗ Échec'}
               </td>
             </tr>
+            <tr>
+              <td>Multi-paliers (plongée profonde)</td>
+              <td style="color: ${ok4 ? '#00c896' : '#ff4757'}">
+                ${ok4 ? '✓ OK' : '✗ Échec'} ${p4.stops.length} paliers
+              </td>
+            </tr>
           </tbody>
         </table>
         <div class="info-message" style="margin-top: 20px;">
           <i class="fas fa-info-circle"></i>
-          <span>L'algorithme utilise la formule corrigée d'Erik Baker pour un calcul plus conservateur</span>
+          <span>Version multi-stops avec paliers multiples de 3m</span>
         </div>
       </div>
     `;
