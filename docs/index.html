@@ -6,7 +6,10 @@
 label{display:inline-flex;align-items:center;gap:6px}
 input[type=number]{width:90px;padding:4px}button{padding:8px 12px;cursor:pointer}
 table{border-collapse:collapse;margin-top:12px}th,td{border:1px solid #ddd;padding:6px 8px}
-.muted{color:#666}</style></head><body>
+.muted{color:#666}</style>
+<!-- importer Chart.js depuis un CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head><body>
 <h1>Planificateur Bühlmann ZH-L16C + GF</h1>
 <div class="row">
   <label>Profondeur (m)<input id="depth" type="number" value="40"></label>
@@ -22,4 +25,6 @@ table{border-collapse:collapse;margin-top:12px}th,td{border:1px solid #ddd;paddi
   <button id="go">Calculer</button><button id="selftest">Self-Test</button>
 </div>
 <div id="out" class="muted">Entrez vos paramètres puis cliquez sur « Calculer ».</div>
+<!-- zone où sera tracé le profil -->
+<canvas id="profileChart" width="800" height="400" style="margin-top:16px"></canvas>
 <script src="./app.js"></script></body></html>

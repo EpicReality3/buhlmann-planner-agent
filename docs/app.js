@@ -4,6 +4,7 @@
 // - Paliers en multiples de 3 m, remontée 9 m/min
 // - Options: lastStopDepth (3 ou 6 m), minLastStopMinutes
 // - Bouton Self-Test pour valider les cas de référence
+// - Graphique du profil avec Chart.js
 
 (function () {
   'use strict';
@@ -141,6 +142,107 @@
     };
   }
 
+  // ----- Graphique du profil -----
+  let profileChart = null;
+
+  function generateProfileData(depth, tbt, stops) {
+    const data = [];
+    let time = 0;
+    
+    // Descente (instantanée)
+    data.push({ x: time, y: 0 });
+    data.push({ x: time, y: depth });
+    
+    // Temps au fond
+    time += tbt;
+    data.push({ x: time, y: depth });
+    
+    // Remontée et paliers
+    if (stops.length > 0) {
+      // Remontée vers le premier palier
+      const firstStop = stops[0];
+      const ascentTime = Math.ceil((depth - firstStop.depth) / ASCENT_RATE);
+      time += ascentTime;
+      data.push({ x: time, y: firstStop.depth });
+      
+      // Paliers
+      for (const stop of stops) {
+        data.push({ x: time, y: stop.depth });
+        time += stop.time;
+        data.push({ x: time, y: stop.depth });
+      }
+    }
+    
+    // Remontée finale
+    const finalDepth = stops.length > 0 ? stops[stops.length - 1].depth : depth;
+    const finalAscentTime = Math.ceil(finalDepth / ASCENT_RATE);
+    time += finalAscentTime;
+    data.push({ x: time, y: 0 });
+    
+    return data;
+  }
+
+  function updateProfileChart(plan, depth, tbt) {
+    const ctx = document.getElementById('profileChart').getContext('2d');
+    
+    // Détruire le graphique existant
+    if (profileChart) {
+      profileChart.destroy();
+    }
+    
+    const profileData = generateProfileData(depth, tbt, plan.stops);
+    
+    profileChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        datasets: [{
+          label: 'Profil de plongée',
+          data: profileData,
+          borderColor: 'rgb(75, 192, 192)',
+          backgroundColor: 'rgba(75, 192, 192, 0.2)',
+          borderWidth: 2,
+          fill: false,
+          tension: 0.1
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            type: 'linear',
+            position: 'bottom',
+            title: {
+              display: true,
+              text: 'Temps (minutes)'
+            },
+            reverse: false
+          },
+          y: {
+            type: 'linear',
+            position: 'left',
+            title: {
+              display: true,
+              text: 'Profondeur (m)'
+            },
+            reverse: true,
+            min: 0,
+            max: Math.max(depth + 5, 50)
+          }
+        },
+        plugins: {
+          title: {
+            display: true,
+            text: 'Profil de décompression'
+          },
+          legend: {
+            display: true
+          }
+        }
+      }
+    });
+  }
+
   // ----- UI -----
   const $ = id => document.getElementById(id);
 
@@ -169,6 +271,7 @@
     };
     const plan = planDive(depth, tbt, { FO2, FHe, FN2 }, gfL, gfH, opts);
     render(plan);
+    updateProfileChart(plan, depth, tbt);
   }
 
   function selfTest() {
