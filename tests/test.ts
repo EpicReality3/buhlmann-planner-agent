@@ -24,10 +24,13 @@ const air = { FO2: 0.21, FN2: 0.79, FHe: 0 };
   assert(last.time >= 2, '>= 2 min à 6 m attendu');
 }
 
-// Bühlmann pur
+// Bühlmann pur avec formule Erik Baker corrigée
+// 40m/10min Air GF85/85 nécessite maintenant un palier (plus conservateur)
 {
   const p = planDive(40, 10, air, 85, 85);
-  assert(p.stops.length === 0 || p.stops.every((s:any)=>s.time===0), 'pas de palier obligatoire attendu');
+  assert(p.stops.length > 0, 'Palier obligatoire attendu avec formule Erik Baker');
+  assert(p.stops[0].depth === 3, 'Palier à 3 m attendu');
+  assert(p.stops[0].time > 0, 'Durée de palier > 0 attendue');
 }
 
 console.log('✅ Tests OK');
