@@ -19,7 +19,11 @@
 <script type="module">
   import { planDive } from '../../src/adapter/index.ts';
   const $=id=>document.getElementById(id);
-  function render(p){ let h='<p>TTS: '+p.tts+' min</p><table><tr><th>Stop (m)</th><th>Durée</th><th>GF</th></tr>';
+  function render(p){ 
+    let h='<p><strong>TTS (décompression):</strong> '+p.tts+' min | ';
+    h+='<strong>Temps total plongée:</strong> '+p.totalDiveTime+' min ';
+    h+='(descente: '+p.descentTime+' min, fond: '+p.bottomTime+' min, déco: '+p.tts+' min)</p>';
+    h+='<table><tr><th>Stop (m)</th><th>Durée</th><th>GF</th></tr>';
     if(!p.stops.length) h+='<tr><td colspan=3>Aucun palier obligatoire</td></tr>';
     for(const s of p.stops) h+=`<tr><td>${s.depth}</td><td>${s.time}</td><td>${Math.round(s.gf*100)}%</td></tr>`;
     $('out').innerHTML=h+'</table>'; }
