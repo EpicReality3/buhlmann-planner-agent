@@ -1,41 +1,25 @@
-<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8" />
-  <title>Planificateur Bühlmann ZH-L16C + GF</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body { font: 14px system-ui, sans-serif; max-width: 980px; margin: 24px auto; }
-    h1 { font-size: 20px; margin-bottom: 12px; }
-    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
-    label { display: inline-flex; align-items: center; gap: 6px; }
-    input[type=number] { width: 90px; padding: 4px; }
-    button { padding: 8px 12px; cursor: pointer; }
-    table { border-collapse: collapse; margin-top: 12px; }
-    th, td { border: 1px solid #ddd; padding: 6px 8px; }
-    .muted { color: #666; }
-  </style>
-</head>
-<body>
-  <h1>Planificateur Bühlmann ZH-L16C + GF</h1>
-
-  <div class="row">
-    <label>Profondeur (m) <input id="depth" type="number" value="40"></label>
-    <label>Temps fond (min) <input id="tbt" type="number" value="10"></label>
-    <label>FO₂ (%) <input id="fo2" type="number" value="21"></label>
-    <label>FHe (%) <input id="fhe" type="number" value="0"></label>
-  </div>
-  <div class="row">
-    <label>GF bas <input id="gfl" type="number" value="85"></label>
-    <label>GF haut <input id="gfh" type="number" value="85"></label>
-    <label><input id="last6" type="checkbox"> Dernier palier à 6 m</label>
-    <label>Min dernier palier (min) <input id="minLast" type="number" value="1" min="0"></label>
-    <button id="go">Calculer</button>
-    <button id="selftest">Self-Test</button>
-  </div>
-
-  <div id="out" class="muted">Entrez vos paramètres puis cliquez sur « Calculer ».</div>
-
-  <script src="./app.js"></script>
-</body>
-</html>
+<!doctype html><html lang="fr"><head><meta charset="utf-8" />
+<title>Planificateur Bühlmann ZH-L16C + GF</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>body{font:14px system-ui,sans-serif;max-width:980px;margin:24px auto}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0}
+label{display:inline-flex;align-items:center;gap:6px}
+input[type=number]{width:90px;padding:4px}button{padding:8px 12px;cursor:pointer}
+table{border-collapse:collapse;margin-top:12px}th,td{border:1px solid #ddd;padding:6px 8px}
+.muted{color:#666}</style></head><body>
+<h1>Planificateur Bühlmann ZH-L16C + GF</h1>
+<div class="row">
+  <label>Profondeur (m)<input id="depth" type="number" value="40"></label>
+  <label>Temps fond (min)<input id="tbt" type="number" value="10"></label>
+  <label>FO₂ (%)<input id="fo2" type="number" value="21"></label>
+  <label>FHe (%)<input id="fhe" type="number" value="0"></label>
+</div>
+<div class="row">
+  <label>GF bas<input id="gfl" type="number" value="85"></label>
+  <label>GF haut<input id="gfh" type="number" value="85"></label>
+  <label><input id="last6" type="checkbox"> Dernier palier à 6 m</label>
+  <label>Min dernier palier (min)<input id="minLast" type="number" value="1" min="0"></label>
+  <button id="go">Calculer</button><button id="selftest">Self-Test</button>
+</div>
+<div id="out" class="muted">Entrez vos paramètres puis cliquez sur « Calculer ».</div>
+<script src="./app.js"></script></body></html>
