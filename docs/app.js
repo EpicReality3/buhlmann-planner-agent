@@ -1,10 +1,10 @@
-// Planificateur Bühlmann ZH-L16C + Gradient Factors (UI autonome)
+// Planificateur Bühlmann ZH-L16C + Gradient Factors (UI moderne)
 // - Formule de plafond corrigée (Erik Baker):
 //   pAmbMin = (Ptiss - GF * a) / (GF / b + 1 - GF)
 // - Paliers en multiples de 3 m, remontée 9 m/min
 // - Options: lastStopDepth (3 ou 6 m), minLastStopMinutes
 // - Bouton Self-Test pour valider les cas de référence
-// - Graphique du profil avec Chart.js
+// - Graphique du profil avec Chart.js et animations
 
 let profileChart = null;
 
@@ -30,6 +30,7 @@ let profileChart = null;
   // Pas de palier & vitesses
   const STOP_STEP = 3;   // m
   const ASCENT_RATE = 9; // m/min
+  const DESCENT_RATE = 19; // m/min
 
   // ----- Utilitaires -----
   function pAmb(depthM) { return SURFACE + depthM * BAR_PER_M; }
@@ -146,20 +147,23 @@ let profileChart = null;
   }
 
   // ----- Graphique du profil -----
-
   function updateProfileChart(depthM, bottomMin, plan) {
-    const ASCENT_RATE = 9;    // m/min (déjà défini dans l'algo)
-    const DESCENT_RATE = 19;  // m/min pour descente (inspiré de Subsurface)
+    // Afficher le conteneur du graphique
+    const chartContainer = document.getElementById('chartContainer');
+    chartContainer.style.display = 'block';
 
     // Calculer la liste des {x:temps, y:profondeur}
     const points = [];
     let t = 0;
+    
     // départ surface
     points.push({ x: t, y: 0 });
+    
     // descente
     const tDesc = depthM / DESCENT_RATE;
     t += tDesc;
     points.push({ x: t, y: depthM });
+    
     // fond
     t += bottomMin;
     points.push({ x: t, y: depthM });
@@ -191,36 +195,113 @@ let profileChart = null;
     if (profileChart) {
       profileChart.destroy();
     }
+
+    // Configuration du graphique avec un style moderne
     profileChart = new Chart(ctx, {
       type: 'line',
       data: {
-        datasets: [
-          {
-            label: 'Profil de plongée',
-            data: points,
-            borderColor: '#007bff',
-            backgroundColor: 'rgba(0, 123, 255, 0.1)',
-            tension: 0,
-          },
-        ],
+        datasets: [{
+          label: 'Profil de plongée',
+          data: points,
+          borderColor: '#0066cc',
+          backgroundColor: 'rgba(0, 102, 204, 0.1)',
+          borderWidth: 3,
+          tension: 0,
+          pointRadius: 6,
+          pointHoverRadius: 8,
+          pointBackgroundColor: '#fff',
+          pointBorderColor: '#0066cc',
+          pointBorderWidth: 2,
+          pointHoverBackgroundColor: '#0066cc',
+          pointHoverBorderColor: '#fff',
+          pointHoverBorderWidth: 2,
+          fill: true,
+        }],
       },
       options: {
-        scales: {
-          x: {
-            title: { display: true, text: 'Temps (min)' },
-          },
-          y: {
-            title: { display: true, text: 'Profondeur (m)' },
-            reverse: true,          // inverse l'axe pour avoir 0 en haut
-            ticks: { stepSize: 3 }, // graduations tous les 3 m
-            suggestedMax: depthM + 5,
-            suggestedMin: 0,
-          },
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false,
         },
         plugins: {
-          legend: { display: false },
+          legend: {
+            display: false
+          },
+          tooltip: {
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            titleColor: '#fff',
+            bodyColor: '#fff',
+            padding: 12,
+            displayColors: false,
+            callbacks: {
+              title: function(tooltipItems) {
+                const item = tooltipItems[0];
+                return `Temps: ${Math.round(item.parsed.x * 10) / 10} min`;
+              },
+              label: function(context) {
+                return `Profondeur: ${Math.round(context.parsed.y)} m`;
+              }
+            }
+          }
         },
-      },
+        scales: {
+          x: {
+            type: 'linear',
+            position: 'bottom',
+            title: {
+              display: true,
+              text: 'Temps (min)',
+              color: '#666',
+              font: {
+                size: 14,
+                weight: 'bold'
+              }
+            },
+            grid: {
+              color: 'rgba(0, 0, 0, 0.05)',
+              drawBorder: false
+            },
+            ticks: {
+              color: '#666',
+              font: {
+                size: 12
+              }
+            }
+          },
+          y: {
+            type: 'linear',
+            position: 'left',
+            reverse: true, // inverse l'axe pour avoir 0 en haut
+            title: {
+              display: true,
+              text: 'Profondeur (m)',
+              color: '#666',
+              font: {
+                size: 14,
+                weight: 'bold'
+              }
+            },
+            grid: {
+              color: 'rgba(0, 0, 0, 0.05)',
+              drawBorder: false
+            },
+            ticks: {
+              stepSize: 3,
+              color: '#666',
+              font: {
+                size: 12
+              },
+              callback: function(value) {
+                return value + ' m';
+              }
+            },
+            suggestedMax: depthM + 5,
+            suggestedMin: -1,
+          }
+        }
+      }
     });
   }
 
@@ -228,14 +309,50 @@ let profileChart = null;
   const $ = id => document.getElementById(id);
 
   function render(plan) {
-    let html = `<p><strong>TTS</strong> : ${plan.tts} min</p>`;
-    html += `<table><thead><tr><th>Stop (m)</th><th>Durée (min)</th><th>GF</th></tr></thead><tbody>`;
-    if (!plan.stops.length) html += `<tr><td colspan="3">Aucun palier obligatoire</td></tr>`;
-    plan.stops.forEach(s => {
-      html += `<tr><td>${s.depth}</td><td>${s.time}</td><td>${Math.round(s.gf * 100)}%</td></tr>`;
-    });
-    html += `</tbody></table>`;
-    $('out').innerHTML = html;
+    const resultsHTML = `
+      <div class="results-section">
+        <div class="results-card">
+          <h3><i class="fas fa-clock"></i> Temps total de remontée</h3>
+          <div class="tts-display">
+            <div class="tts-value">${plan.tts}</div>
+            <div class="tts-label">minutes</div>
+          </div>
+          ${plan.stops.length === 0 ? 
+            '<div class="no-stops"><i class="fas fa-check-circle"></i>Aucun palier obligatoire</div>' : 
+            `<div class="info-message">
+              <i class="fas fa-info-circle"></i>
+              <span>${plan.stops.length} palier${plan.stops.length > 1 ? 's' : ''} requis</span>
+            </div>`
+          }
+        </div>
+        <div class="results-card">
+          <h3><i class="fas fa-table"></i> Paliers de décompression</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Profondeur (m)</th>
+                <th>Durée (min)</th>
+                <th>Gradient Factor</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${plan.stops.length === 0 ? 
+                '<tr><td colspan="3" style="text-align: center; color: #00c896;">Aucun palier obligatoire</td></tr>' :
+                plan.stops.map(s => `
+                  <tr>
+                    <td>${s.depth}</td>
+                    <td>${s.time}</td>
+                    <td>${Math.round(s.gf * 100)}%</td>
+                  </tr>
+                `).join('')
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+    
+    $('out').innerHTML = resultsHTML;
   }
 
   function compute() {
@@ -250,6 +367,18 @@ let profileChart = null;
       lastStopDepth: $('last6').checked ? 6 : 3,
       minLastStopMinutes: +$('minLast').value | 0
     };
+
+    // Validation des entrées
+    if (FO2 + FHe > 1) {
+      $('out').innerHTML = `
+        <div class="info-message" style="background: #ffe6e6; color: #ff4757;">
+          <i class="fas fa-exclamation-triangle"></i>
+          <span>Erreur : FO₂ + FHe ne peut pas dépasser 100%</span>
+        </div>
+      `;
+      return;
+    }
+
     const plan = planDive(depth, tbt, { FO2, FHe, FN2 }, gfL, gfH, opts);
     render(plan);
     updateProfileChart(depth, tbt, plan);
@@ -280,17 +409,66 @@ let profileChart = null;
 
     const all = t1 && t2 && t3 && ok1 && ok2 && ok3;
 
-    $('out').innerHTML =
-      `<p><strong>Self-Test</strong> : ${all ? '✅ OK' : '❌ Échec'}</p>` +
-      `<ul style="color:#666">
-        <li>pinsp sanity: ${t1 && t2 && t3 ? 'OK' : 'NOK'}</li>
-        <li>Subsurface-like (≥1′ @ 3 m): ${ok1 ? 'OK' : 'NOK'}</li>
-        <li>Peregrine-like (≥1′ @ 6 m): ${ok2 ? 'OK' : 'NOK'}</li>
-        <li>Bühlmann corrigé (palier obligatoire): ${ok3 ? 'OK' : 'NOK'}</li>
-      </ul>`;
+    const resultsHTML = `
+      <div class="results-card" style="max-width: 600px; margin: 0 auto;">
+        <h3 style="${all ? 'color: #00c896;' : 'color: #ff4757;'}">
+          <i class="fas fa-${all ? 'check-circle' : 'times-circle'}"></i>
+          Self-Test : ${all ? 'Tous les tests passent ✅' : 'Certains tests échouent ❌'}
+        </h3>
+        <table style="margin-top: 20px;">
+          <thead>
+            <tr>
+              <th>Test</th>
+              <th>Résultat</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Calculs pinsp (pression inspirée)</td>
+              <td style="color: ${t1 && t2 && t3 ? '#00c896' : '#ff4757'}">
+                ${t1 && t2 && t3 ? '✓ OK' : '✗ Échec'}
+              </td>
+            </tr>
+            <tr>
+              <td>Subsurface-like (≥1 min @ 3 m)</td>
+              <td style="color: ${ok1 ? '#00c896' : '#ff4757'}">
+                ${ok1 ? '✓ OK' : '✗ Échec'}
+              </td>
+            </tr>
+            <tr>
+              <td>Peregrine-like (≥1 min @ 6 m)</td>
+              <td style="color: ${ok2 ? '#00c896' : '#ff4757'}">
+                ${ok2 ? '✓ OK' : '✗ Échec'}
+              </td>
+            </tr>
+            <tr>
+              <td>Formule Baker (palier obligatoire)</td>
+              <td style="color: ${ok3 ? '#00c896' : '#ff4757'}">
+                ${ok3 ? '✓ OK' : '✗ Échec'}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="info-message" style="margin-top: 20px;">
+          <i class="fas fa-info-circle"></i>
+          <span>L'algorithme utilise la formule corrigée d'Erik Baker pour un calcul plus conservateur</span>
+        </div>
+      </div>
+    `;
+
+    $('out').innerHTML = resultsHTML;
+    
+    // Masquer le graphique pour le self-test
+    document.getElementById('chartContainer').style.display = 'none';
   }
 
   // Bind UI
   document.getElementById('go').addEventListener('click', compute);
   document.getElementById('selftest').addEventListener('click', selfTest);
+
+  // Calcul initial au chargement
+  window.addEventListener('load', () => {
+    // Petite animation de chargement
+    setTimeout(compute, 100);
+  });
 })();
