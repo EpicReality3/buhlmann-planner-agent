@@ -146,101 +146,80 @@ let profileChart = null;
 
   // ----- Graphique du profil -----
 
-  function generateProfileData(depth, tbt, stops) {
-    const data = [];
-    let time = 0;
-    
-    // Descente (instantanée)
-    data.push({ x: time, y: 0 });
-    data.push({ x: time, y: depth });
-    
-    // Temps au fond
-    time += tbt;
-    data.push({ x: time, y: depth });
-    
-    // Remontée et paliers
-    if (stops.length > 0) {
-      // Remontée vers le premier palier
-      const firstStop = stops[0];
-      const ascentTime = Math.ceil((depth - firstStop.depth) / ASCENT_RATE);
-      time += ascentTime;
-      data.push({ x: time, y: firstStop.depth });
-      
-      // Paliers
-      for (const stop of stops) {
-        data.push({ x: time, y: stop.depth });
-        time += stop.time;
-        data.push({ x: time, y: stop.depth });
-      }
-    }
-    
-    // Remontée finale
-    const finalDepth = stops.length > 0 ? stops[stops.length - 1].depth : depth;
-    const finalAscentTime = Math.ceil(finalDepth / ASCENT_RATE);
-    time += finalAscentTime;
-    data.push({ x: time, y: 0 });
-    
-    return data;
-  }
+  function updateProfileChart(depthM, bottomMin, plan) {
+    const ASCENT_RATE = 9;    // m/min (déjà défini dans l'algo)
+    const DESCENT_RATE = 19;  // m/min pour descente (inspiré de Subsurface)
 
-  function updateProfileChart(plan, depth, tbt) {
+    // Calculer la liste des {x:temps, y:profondeur}
+    const points = [];
+    let t = 0;
+    // départ surface
+    points.push({ x: t, y: 0 });
+    // descente
+    const tDesc = depthM / DESCENT_RATE;
+    t += tDesc;
+    points.push({ x: t, y: depthM });
+    // fond
+    t += bottomMin;
+    points.push({ x: t, y: depthM });
+
+    // paliers : ascension vers chaque stop puis maintien
+    let currentDepth = depthM;
+    for (const stop of plan.stops) {
+      const ascendTime = (currentDepth - stop.depth) / ASCENT_RATE;
+      if (ascendTime > 0) {
+        t += ascendTime;
+        points.push({ x: t, y: stop.depth });
+      }
+      if (stop.time > 0) {
+        t += stop.time;
+        points.push({ x: t, y: stop.depth });
+      }
+      currentDepth = stop.depth;
+    }
+
+    // remontée finale
+    const ascendFinal = currentDepth / ASCENT_RATE;
+    if (ascendFinal > 0) {
+      t += ascendFinal;
+      points.push({ x: t, y: 0 });
+    }
+
+    // Création ou mise à jour du graphique Chart.js
     const ctx = document.getElementById('profileChart').getContext('2d');
-    
-    // Détruire le graphique existant
     if (profileChart) {
       profileChart.destroy();
     }
-    
-    const profileData = generateProfileData(depth, tbt, plan.stops);
-    
     profileChart = new Chart(ctx, {
       type: 'line',
       data: {
-        datasets: [{
-          label: 'Profil de plongée',
-          data: profileData,
-          borderColor: 'rgb(75, 192, 192)',
-          backgroundColor: 'rgba(75, 192, 192, 0.2)',
-          borderWidth: 2,
-          fill: false,
-          tension: 0.1
-        }]
+        datasets: [
+          {
+            label: 'Profil de plongée',
+            data: points,
+            borderColor: '#007bff',
+            backgroundColor: 'rgba(0, 123, 255, 0.1)',
+            tension: 0,
+          },
+        ],
       },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
         scales: {
           x: {
-            type: 'linear',
-            position: 'bottom',
-            title: {
-              display: true,
-              text: 'Temps (minutes)'
-            },
-            reverse: false
+            title: { display: true, text: 'Temps (min)' },
           },
           y: {
-            type: 'linear',
-            position: 'left',
-            title: {
-              display: true,
-              text: 'Profondeur (m)'
-            },
-            reverse: true,
-            min: 0,
-            max: Math.max(depth + 5, 50)
-          }
+            title: { display: true, text: 'Profondeur (m)' },
+            reverse: true,          // inverse l'axe pour avoir 0 en haut
+            ticks: { stepSize: 3 }, // graduations tous les 3 m
+            suggestedMax: depthM + 5,
+            suggestedMin: 0,
+          },
         },
         plugins: {
-          title: {
-            display: true,
-            text: 'Profil de décompression'
-          },
-          legend: {
-            display: true
-          }
-        }
-      }
+          legend: { display: false },
+        },
+      },
     });
   }
 
@@ -272,7 +251,7 @@ let profileChart = null;
     };
     const plan = planDive(depth, tbt, { FO2, FHe, FN2 }, gfL, gfH, opts);
     render(plan);
-    updateProfileChart(plan, depth, tbt);
+    updateProfileChart(depth, tbt, plan);
   }
 
   function selfTest() {
