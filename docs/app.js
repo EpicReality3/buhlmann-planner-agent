@@ -3,8 +3,8 @@
 //   pAmbMin = (Ptiss - GF * a) / (GF / b + 1 - GF)
 // - Paliers en multiples de 3 m, remontée 9 m/min
 // - Options: lastStopDepth (3 ou 6 m), minLastStopMinutes
-// - Bouton Self-Test pour valider les cas de référence
-// - Graphique du profil avec Chart.js et animations
+// - Graphique avec profil + plafond GF en temps réel
+// - Validation UX douce et badge de validation
 
 let profileChart = null;
 
@@ -142,81 +142,135 @@ let profileChart = null;
     return {
       firstStopDepth: stops.length ? stops[0].depth : 0,
       stops,
-      tts: Math.round(tts * 10) / 10
+      tts: tts
     };
   }
 
-  // ----- Graphique du profil -----
-  function updateProfileChart(depthM, bottomMin, plan) {
+  // ----- Graphique du profil avec plafond -----
+  function updateProfileChartWithCeiling(depthM, bottomMin, gas, gfL, gfH, opts, plan) {
+    const points = [];
+    const ceilPts = [];
+    
+    // Re-simule le profil minute par minute pour tracer la courbe + le plafond
+    const st = initTissues();
+    let t = 0, cur = 0;
+
+    // Point de départ
+    points.push({ x: t, y: 0 });
+    ceilPts.push({ x: t, y: 0 });
+
+    // Descente
+    let down = Math.ceil(depthM / DESCENT_RATE);
+    for (let i = 0; i < down; i++) {
+      const next = Math.min(depthM, cur + DESCENT_RATE);
+      updateConstantDepth(st, next, gas, 1);
+      cur = next; t++;
+      points.push({ x: t, y: cur });
+      
+      // Calcul du plafond
+      const gf = gfL / 100; // Pendant la descente, on utilise GF bas
+      const c = overallCeiling(st, gf);
+      ceilPts.push({ x: t, y: c });
+    }
+
+    // Fond
+    for (let i = 0; i < bottomMin; i++) {
+      updateConstantDepth(st, depthM, gas, 1);
+      t++; 
+      points.push({ x: t, y: depthM });
+      
+      const gf = gfL / 100;
+      const c = overallCeiling(st, gf);
+      ceilPts.push({ x: t, y: c });
+    }
+
+    // First ceiling pour le calcul GF
+    const firstCeil = overallCeiling(st, gfL/100);
+
+    // Helper pour ajouter le plafond
+    function pushCeiling() {
+      const gf = gfAtDepth(cur, gfL/100, gfH/100, firstCeil);
+      const c = overallCeiling(st, gf);
+      ceilPts.push({ x: t, y: c });
+    }
+
+    // Remontée vers dernier palier
+    const lastStopDepth = opts.lastStopDepth || 3;
+    if (cur > lastStopDepth) {
+      let mins = Math.ceil((cur - lastStopDepth)/ASCENT_RATE);
+      for (let i = 0; i < mins; i++) {
+        const next = Math.max(cur - ASCENT_RATE, lastStopDepth);
+        updateConstantDepth(st, next, gas, 1);
+        cur = next; t++;
+        points.push({ x: t, y: cur });
+        pushCeiling();
+      }
+    }
+
+    // Tenue du dernier palier
+    let held = 0;
+    const minLast = (opts.minLastStopMinutes|0);
+    while (true) {
+      const gf = gfAtDepth(cur, gfL/100, gfH/100, firstCeil);
+      const c = overallCeiling(st, gf);
+      if (!(c > 0 || held < minLast)) break;
+      updateConstantDepth(st, cur, gas, 1);
+      held++; t++;
+      points.push({ x: t, y: cur });
+      ceilPts.push({ x: t, y: c });
+      if (held > 360) break; // garde-fou
+    }
+
+    // Remontée finale
+    if (cur > 0) {
+      let mins = Math.ceil(cur/ASCENT_RATE);
+      for (let i = 0; i < mins; i++) {
+        const next = Math.max(cur - ASCENT_RATE, 0);
+        updateConstantDepth(st, next, gas, 1);
+        cur = next; t++;
+        points.push({ x: t, y: cur });
+        pushCeiling();
+      }
+    }
+
     // Afficher le conteneur du graphique
     const chartContainer = document.getElementById('chartContainer');
     chartContainer.style.display = 'block';
 
-    // Calculer la liste des {x:temps, y:profondeur}
-    const points = [];
-    let t = 0;
-    
-    // départ surface
-    points.push({ x: t, y: 0 });
-    
-    // descente
-    const tDesc = depthM / DESCENT_RATE;
-    t += tDesc;
-    points.push({ x: t, y: depthM });
-    
-    // fond
-    t += bottomMin;
-    points.push({ x: t, y: depthM });
-
-    // paliers : ascension vers chaque stop puis maintien
-    let currentDepth = depthM;
-    for (const stop of plan.stops) {
-      const ascendTime = (currentDepth - stop.depth) / ASCENT_RATE;
-      if (ascendTime > 0) {
-        t += ascendTime;
-        points.push({ x: t, y: stop.depth });
-      }
-      if (stop.time > 0) {
-        t += stop.time;
-        points.push({ x: t, y: stop.depth });
-      }
-      currentDepth = stop.depth;
-    }
-
-    // remontée finale
-    const ascendFinal = currentDepth / ASCENT_RATE;
-    if (ascendFinal > 0) {
-      t += ascendFinal;
-      points.push({ x: t, y: 0 });
-    }
-
-    // Création ou mise à jour du graphique Chart.js
+    // MàJ Chart.js
     const ctx = document.getElementById('profileChart').getContext('2d');
-    if (profileChart) {
-      profileChart.destroy();
-    }
-
-    // Configuration du graphique avec un style moderne
+    if (profileChart) profileChart.destroy();
+    
     profileChart = new Chart(ctx, {
       type: 'line',
       data: {
-        datasets: [{
-          label: 'Profil de plongée',
-          data: points,
-          borderColor: '#0066cc',
-          backgroundColor: 'rgba(0, 102, 204, 0.1)',
-          borderWidth: 3,
-          tension: 0,
-          pointRadius: 6,
-          pointHoverRadius: 8,
-          pointBackgroundColor: '#fff',
-          pointBorderColor: '#0066cc',
-          pointBorderWidth: 2,
-          pointHoverBackgroundColor: '#0066cc',
-          pointHoverBorderColor: '#fff',
-          pointHoverBorderWidth: 2,
-          fill: true,
-        }],
+        datasets: [
+          {
+            label: 'Profil de plongée',
+            data: points,
+            borderColor: '#0066cc',
+            backgroundColor: 'rgba(0, 102, 204, 0.1)',
+            borderWidth: 3,
+            stepped: 'before', // Ligne en escaliers
+            tension: 0,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            pointBackgroundColor: '#fff',
+            pointBorderColor: '#0066cc',
+            pointBorderWidth: 2,
+            fill: true,
+          },
+          {
+            label: 'Plafond (GF)',
+            data: ceilPts,
+            borderColor: '#ff4757',
+            borderDash: [6, 4],
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 0,
+            fill: false,
+          }
+        ],
       },
       options: {
         responsive: true,
@@ -227,24 +281,57 @@ let profileChart = null;
         },
         plugins: {
           legend: {
-            display: false
+            display: true,
+            position: 'top',
+            labels: {
+              usePointStyle: true,
+              padding: 20,
+              font: {
+                size: 12
+              }
+            }
           },
           tooltip: {
             backgroundColor: 'rgba(0, 0, 0, 0.8)',
             titleColor: '#fff',
             bodyColor: '#fff',
             padding: 12,
-            displayColors: false,
+            displayColors: true,
             callbacks: {
               title: function(tooltipItems) {
                 const item = tooltipItems[0];
                 return `Temps: ${Math.round(item.parsed.x * 10) / 10} min`;
               },
               label: function(context) {
-                return `Profondeur: ${Math.round(context.parsed.y)} m`;
+                const label = context.dataset.label;
+                const value = Math.round(context.parsed.y);
+                return `${label}: ${value} m`;
               }
             }
-          }
+          },
+          annotation: plan.firstStopDepth > 0 ? {
+            annotations: {
+              firstStop: {
+                type: 'line',
+                yMin: plan.firstStopDepth,
+                yMax: plan.firstStopDepth,
+                borderColor: 'rgba(100, 100, 100, 0.3)',
+                borderWidth: 2,
+                borderDash: [10, 5],
+                label: {
+                  content: `Premier palier: ${plan.firstStopDepth} m`,
+                  display: true,
+                  position: 'end',
+                  backgroundColor: 'rgba(100, 100, 100, 0.8)',
+                  color: 'white',
+                  padding: 4,
+                  font: {
+                    size: 11
+                  }
+                }
+              }
+            }
+          } : {}
         },
         scales: {
           x: {
@@ -274,6 +361,7 @@ let profileChart = null;
             type: 'linear',
             position: 'left',
             reverse: true, // inverse l'axe pour avoir 0 en haut
+            min: 0, // Force le minimum à 0
             title: {
               display: true,
               text: 'Profondeur (m)',
@@ -288,7 +376,7 @@ let profileChart = null;
               drawBorder: false
             },
             ticks: {
-              stepSize: 3,
+              stepSize: 3, // Graduations tous les 3 m
               color: '#666',
               font: {
                 size: 12
@@ -297,24 +385,71 @@ let profileChart = null;
                 return value + ' m';
               }
             },
-            suggestedMax: depthM + 5,
-            suggestedMin: -1,
+            suggestedMax: Math.ceil(depthM / 3) * 3 + 3, // Arrondi au multiple de 3 supérieur
           }
         }
       }
     });
   }
 
+  // ----- Validation silencieuse -----
+  function runSilentValidation() {
+    const approx = (a, b, tol) => Math.abs(a - b) <= tol;
+
+    // Tests de base
+    const t1 = approx((1.0 - PH2O) * 0.79, 0.7405, 0.02);
+    const t2 = approx((4.0 - PH2O) * 0.79, 3.1105, 0.03);
+    const t3 = approx((5.0 - PH2O) * 0.79, 3.9005, 0.03);
+
+    // Tests algorithme
+    const p1 = planDive(40, 10, { FO2: 0.21, FHe: 0, FN2: 0.79 }, 85, 85, { lastStopDepth: 3, minLastStopMinutes: 1 });
+    const ok1 = p1.stops.length && p1.stops.at(-1).depth === 3 && p1.stops.at(-1).time >= 1;
+
+    const all = t1 && t2 && t3 && ok1;
+    return all;
+  }
+
   // ----- UI -----
   const $ = id => document.getElementById(id);
 
-  function render(plan) {
+  function validateInputs() {
+    const FO2 = (+$('fo2').value) / 100;
+    const FHe = (+$('fhe').value) / 100;
+    const gfL = +$('gfl').value;
+    const gfH = +$('gfh').value;
+
+    // Validation gaz
+    if (FO2 < 0 || FO2 > 1 || FHe < 0 || FHe > 1) {
+      return { valid: false, message: "FO₂ et FHe doivent être entre 0 et 100%" };
+    }
+    
+    if (FO2 + FHe > 1) {
+      return { valid: false, message: "FO₂ + FHe ne peut pas dépasser 100% (l'azote deviendrait négatif)" };
+    }
+
+    // Validation GF
+    if (gfL < 1 || gfL > 99 || gfH < 1 || gfH > 99) {
+      return { valid: false, message: "Les Gradient Factors doivent être entre 1 et 99%" };
+    }
+
+    if (gfL > gfH) {
+      return { valid: false, message: "GF bas doit être ≤ GF haut" };
+    }
+
+    return { valid: true };
+  }
+
+  function render(plan, isValid) {
     const resultsHTML = `
       <div class="results-section">
         <div class="results-card">
-          <h3><i class="fas fa-clock"></i> Temps total de remontée</h3>
+          <h3>
+            <i class="fas fa-clock"></i> 
+            Temps total de remontée
+            ${isValid ? '<span class="validation-badge valid">✅ Validé</span>' : '<span class="validation-badge invalid">❌ À vérifier</span>'}
+          </h3>
           <div class="tts-display">
-            <div class="tts-value">${plan.tts}</div>
+            <div class="tts-value">${Math.round(plan.tts)}</div>
             <div class="tts-label">minutes</div>
           </div>
           ${plan.stops.length === 0 ? 
@@ -332,7 +467,7 @@ let profileChart = null;
               <tr>
                 <th>Profondeur (m)</th>
                 <th>Durée (min)</th>
-                <th>Gradient Factor</th>
+                <th>Gradient Factor (%)</th>
               </tr>
             </thead>
             <tbody>
@@ -340,8 +475,8 @@ let profileChart = null;
                 '<tr><td colspan="3" style="text-align: center; color: #00c896;">Aucun palier obligatoire</td></tr>' :
                 plan.stops.map(s => `
                   <tr>
-                    <td>${s.depth}</td>
-                    <td>${s.time}</td>
+                    <td>${s.depth} m</td>
+                    <td>${s.time} min</td>
                     <td>${Math.round(s.gf * 100)}%</td>
                   </tr>
                 `).join('')
@@ -369,19 +504,23 @@ let profileChart = null;
     };
 
     // Validation des entrées
-    if (FO2 + FHe > 1) {
+    const validation = validateInputs();
+    if (!validation.valid) {
       $('out').innerHTML = `
         <div class="info-message" style="background: #ffe6e6; color: #ff4757;">
           <i class="fas fa-exclamation-triangle"></i>
-          <span>Erreur : FO₂ + FHe ne peut pas dépasser 100%</span>
+          <span>${validation.message}</span>
         </div>
       `;
+      document.getElementById('chartContainer').style.display = 'none';
       return;
     }
 
     const plan = planDive(depth, tbt, { FO2, FHe, FN2 }, gfL, gfH, opts);
-    render(plan);
-    updateProfileChart(depth, tbt, plan);
+    const isValid = runSilentValidation();
+    
+    render(plan, isValid);
+    updateProfileChartWithCeiling(depth, tbt, { FO2, FHe, FN2 }, gfL, gfH, opts, plan);
   }
 
   function selfTest() {
