@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8"><title>Planificateur Bühlmann</title>
+<style>body{font:14px system-ui,sans-serif;max-width:900px;margin:24px auto}label{margin-right:12px}table{border-collapse:collapse;margin-top:8px}th,td{border:1px solid #ddd;padding:4px 8px}</style>
+</head><body>
+<h1>Planificateur Bühlmann ZH-L16C</h1>
+<div>
+  <label>Profondeur (m) <input id="depth" type="number" value="40"></label>
+  <label>Temps fond (min) <input id="tbt" type="number" value="10"></label>
+  <label>FO₂ (%) <input id="fo2" type="number" value="21"></label>
+  <label>FHe (%) <input id="fhe" type="number" value="0"></label>
+  <label>GF bas <input id="gfl" type="number" value="85"></label>
+  <label>GF haut <input id="gfh" type="number" value="85"></label>
+  <label><input id="last6" type="checkbox"> Dernier palier 6 m</label>
+  <label>Min dernier palier <input id="minLast" type="number" value="1"></label>
+  <button id="go">Calculer</button>
+</div>
+<div id="out"></div>
+<script type="module">
+  import { planDive } from '../../src/adapter/index.ts';
+  const $=id=>document.getElementById(id);
+  function render(p){ let h='<p>TTS: '+p.tts+' min</p><table><tr><th>Stop (m)</th><th>Durée</th><th>GF</th></tr>';
+    if(!p.stops.length) h+='<tr><td colspan=3>Aucun palier obligatoire</td></tr>';
+    for(const s of p.stops) h+=`<tr><td>${s.depth}</td><td>${s.time}</td><td>${Math.round(s.gf*100)}%</td></tr>`;
+    $('out').innerHTML=h+'</table>'; }
+  $('go').onclick=()=>{
+    const d=+$('depth').value, t=+$('tbt').value, FO2=(+$('fo2').value)/100, FHe=(+$('fhe').value)/100, FN2=1-FO2-FHe;
+    const gfl=+$('gfl').value, gfh=+$('gfh').value, opts={ lastStopDepth: $('last6').checked?6:3, minLastStopMinutes: +$('minLast').value|0};
+    render(planDive(d,t,{FO2,FN2,FHe},gfl,gfh,opts));
+  };
+  $('go').click();
+</script>
+</body></html>
