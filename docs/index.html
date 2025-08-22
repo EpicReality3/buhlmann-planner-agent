@@ -258,10 +258,31 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            position: relative;
         }
 
         .results-card h3 i {
             font-size: 1.3rem;
+        }
+
+        /* Badge de validation */
+        .validation-badge {
+            margin-left: auto;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .validation-badge.valid {
+            background: var(--success);
+            color: white;
+        }
+
+        .validation-badge.invalid {
+            background: var(--danger);
+            color: white;
         }
 
         /* Table styles */
@@ -320,11 +341,12 @@
         /* Chart container */
         .chart-container {
             position: relative;
-            height: 400px;
+            height: 450px;
             padding: 20px;
             background: white;
             border-radius: 12px;
             box-shadow: var(--shadow);
+            margin-top: 30px;
         }
 
         canvas {
@@ -409,6 +431,11 @@
             .input-section {
                 padding: 20px;
             }
+            
+            .validation-badge {
+                font-size: 0.7rem;
+                padding: 3px 8px;
+            }
         }
     </style>
 </head>
@@ -470,14 +497,14 @@
                             <i class="fas fa-level-down-alt"></i>
                             Gradient Factor bas (%)
                         </label>
-                        <input id="gfl" type="number" value="85" min="0" max="100">
+                        <input id="gfl" type="number" value="85" min="1" max="99">
                     </div>
                     <div class="input-group">
                         <label for="gfh">
                             <i class="fas fa-level-up-alt"></i>
                             Gradient Factor haut (%)
                         </label>
-                        <input id="gfh" type="number" value="85" min="0" max="100">
+                        <input id="gfh" type="number" value="85" min="1" max="99">
                     </div>
                     <div class="input-group">
                         <label for="minLast">
@@ -512,10 +539,6 @@
 
             <!-- Graphique -->
             <div class="chart-container fade-in" style="display: none;" id="chartContainer">
-                <h3 style="color: var(--primary); margin-bottom: 20px;">
-                    <i class="fas fa-chart-area"></i>
-                    Profil de plongée
-                </h3>
                 <canvas id="profileChart"></canvas>
             </div>
         </div>
