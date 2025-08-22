@@ -3,7 +3,7 @@ import { GasMix, TissueState, DecompressionStop, DecompressionPlan } from './mod
 import { initTissues, updateConstantDepth } from './utils';
 
 const ASCENT_RATE = 9;   // m/min
-const STOP_INTERVAL = 3; // m
+const STOP_INTERVAL = 3; // m (paliers en multiples de 3m)
 const SURFACE = 1.01325, BAR_PER_M = 0.1;
 
 /**
@@ -33,6 +33,9 @@ function ceilingForCompartment(pN2:number,pHe:number,gf:number,i:number):number{
   return Math.max(0, (pAmbMin - SURFACE)/BAR_PER_M);
 }
 
+/**
+ * Calcule le plafond global (compartiment le plus contraignant)
+ */
 function overallCeiling(s:TissueState,gf:number):number{
   let worst=0;
   for(let i=0;i<s.pN2.length;i++){
@@ -42,13 +45,28 @@ function overallCeiling(s:TissueState,gf:number):number{
   return worst;
 }
 
-function gfAtDepth(depthM:number,gfLow:number,gfHigh:number,firstCeil:number):number{
+/**
+ * Interpole le Gradient Factor entre GF low et GF high
+ * selon la profondeur actuelle
+ */
+export function gfAtDepth(depthM:number,gfLow:number,gfHigh:number,firstCeil:number):number{
   const firstStopDepth = Math.ceil(firstCeil/STOP_INTERVAL)*STOP_INTERVAL;
   if(firstStopDepth<=0) return gfHigh;
   const frac = Math.max(0, Math.min(1, 1 - depthM/firstStopDepth));
   return gfLow + (gfHigh-gfLow)*frac;
 }
 
+/**
+ * Planifie la décompression pour une plongée
+ * 
+ * @param depthM Profondeur maximale en mètres
+ * @param bottomMin Temps au fond en minutes
+ * @param gas Mélange gazeux
+ * @param gfLow Gradient Factor bas (0-1)
+ * @param gfHigh Gradient Factor haut (0-1)
+ * @param opts Options de planification
+ * @returns Plan de décompression avec paliers et TTS
+ */
 export function planDecompression(
   depthM:number, bottomMin:number, gas:GasMix, gfLow:number, gfHigh:number,
   opts:{lastStopDepth?:number; minLastStopMinutes?:number}={}
@@ -57,14 +75,16 @@ export function planDecompression(
   const minLast = Math.max(0, Math.floor(opts.minLastStopMinutes ?? 0));
   const state = initTissues();
 
-  // fond
+  // Phase 1: Descente et temps au fond
   updateConstantDepth(state, depthM, gas, bottomMin);
 
+  // Calcul du premier plafond avec GF low
   const firstCeil = overallCeiling(state, gfLow);
   const stops:DecompressionStop[] = [];
   let currentDepth = depthM, tts = 0;
 
-  // Remontée vers dernier palier (pas de deep stops dans cette version)
+  // Phase 2: Remontée vers le dernier palier
+  // Note: pas de deep stops dans cette version simplifiée
   if(currentDepth > lastStopDepth){
     const minutes = Math.ceil((currentDepth-lastStopDepth)/ASCENT_RATE);
     for(let i=0;i<minutes;i++){
@@ -74,20 +94,36 @@ export function planDecompression(
     }
   }
 
-  // Tenue au dernier palier : plafond<=0 ET durée min atteinte
+  // Phase 3: Tenue au dernier palier
+  // Conditions: plafond <= 0 ET durée minimale atteinte
   let held=0;
   while(true){
     const gf = gfAtDepth(currentDepth, gfLow, gfHigh, firstCeil);
     const ceil = overallCeiling(state, gf);
-    const need = ceil > 0 || held < minLast;
-    if(!need) break;
+    
+    // Besoin de rester si:
+    // 1. Le plafond est > 0 (déco obligatoire)
+    // 2. OU la durée minimale n'est pas atteinte
+    const needDeco = ceil > 0;
+    const needMinTime = held < minLast;
+    
+    if(!needDeco && !needMinTime) break;
+    
     updateConstantDepth(state, currentDepth, gas, 1);
     held += 1; tts += 1;
-    if(held>360) break;
+    if(held>360) break; // Garde-fou
   }
-  if(held>0) stops.push({ depth: currentDepth, time: held, gf: gfAtDepth(currentDepth,gfLow,gfHigh,firstCeil) });
+  
+  // Ajouter le palier seulement s'il y a eu du temps passé
+  if(held>0) {
+    stops.push({ 
+      depth: currentDepth, 
+      time: held, 
+      gf: gfAtDepth(currentDepth,gfLow,gfHigh,firstCeil) 
+    });
+  }
 
-  // Remontée surface
+  // Phase 4: Remontée finale vers la surface
   if(currentDepth>0){
     const minutes = Math.ceil(currentDepth/ASCENT_RATE);
     for(let i=0;i<minutes;i++){
@@ -97,5 +133,9 @@ export function planDecompression(
     }
   }
 
-  return { firstStopDepth: stops.length?stops[0].depth:0, stops, tts: Math.round(tts*10)/10 };
+  return { 
+    firstStopDepth: stops.length?stops[0].depth:0, 
+    stops, 
+    tts: Math.round(tts*10)/10  // Arrondi à 0.1 près
+  };
 }

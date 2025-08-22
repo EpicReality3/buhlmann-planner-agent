@@ -1,7 +1,9 @@
 {
   "name": "buhlmann-planner-agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "description": "Planificateur de décompression Bühlmann ZH-L16C avec Gradient Factors",
   "private": true,
+  "main": "src/index.ts",
   "devDependencies": {
     "ts-node": "^10.9.2",
     "typescript": "^5.4.0"
@@ -9,5 +11,14 @@
   "type": "commonjs",
   "scripts": {
     "test": "ts-node --compiler-options '{\"allowImportingTsExtensions\":true,\"module\":\"commonjs\"}' tests/test.ts"
-  }
+  },
+  "keywords": [
+    "buhlmann",
+    "decompression",
+    "diving",
+    "gradient-factors",
+    "scuba"
+  ],
+  "author": "EpicReality3",
+  "license": "MIT"
 }
