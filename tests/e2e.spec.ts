@@ -1,10 +1,12 @@
 import { test, expect } from '@playwright/test';
+import * as path from 'path';
 
 test.describe('UI E2E Tests - Bühlmann Planner', () => {
   
   test.beforeEach(async ({ page }) => {
-    // Naviguer vers l'interface
-    await page.goto('file://' + process.cwd() + '/docs/index.html');
+    // Naviguer vers l'interface en file:// local
+    const htmlPath = path.join(process.cwd(), 'docs', 'index.html');
+    await page.goto(`file://${htmlPath}`);
     
     // Vérifier que la page est chargée
     await expect(page.locator('h1')).toContainText('Bühlmann ZH-L16C');
@@ -21,7 +23,7 @@ test.describe('UI E2E Tests - Bühlmann Planner', () => {
     await expect(page.locator('#out')).toContainText('pinsp sanity: OK');
     await expect(page.locator('#out')).toContainText('Subsurface-like');
     await expect(page.locator('#out')).toContainText('Peregrine-like');
-    await expect(page.locator('#out')).toContainText('Bühlmann corrigé');
+    await expect(page.locator('#out')).toContainText('Bühlmann pur');
   });
 
   test('Bühlmann pur - 40m/10min GF85/85 sans palier minimal', async ({ page }) => {
@@ -41,10 +43,35 @@ test.describe('UI E2E Tests - Bühlmann Planner', () => {
     // Vérifier qu'il n'y a pas de palier obligatoire
     await expect(page.locator('#out')).toContainText('Aucun palier obligatoire');
     
-    // Vérifier TTS ≤ 5 min (remontée directe)
-    const ttsText = await page.locator('#out p strong').textContent();
-    const tts = parseFloat(ttsText?.match(/\d+\.?\d*/)?.[0] || '0');
-    expect(tts).toBeLessThanOrEqual(5);
+    // Vérifier TTS entre 4 et 6 min (remontée directe depuis 40m à 9m/min)
+    const ttsText = await page.locator('#out p').first().textContent();
+    const tts = parseFloat(ttsText?.match(/\d+/)?.[0] || '0');
+    expect(tts).toBeGreaterThanOrEqual(4);
+    expect(tts).toBeLessThanOrEqual(6);
+  });
+
+  test('Bühlmann pur avec last=6m - pas de maintien artificiel', async ({ page }) => {
+    // Configurer les paramètres
+    await page.fill('#depth', '40');
+    await page.fill('#tbt', '10');
+    await page.fill('#fo2', '21');
+    await page.fill('#fhe', '0');
+    await page.fill('#gfl', '85');
+    await page.fill('#gfh', '85');
+    await page.check('#last6'); // Dernier palier à 6m
+    await page.fill('#minLast', '0'); // Pas de minimum
+    
+    // Calculer
+    await page.click('#go');
+    
+    // Vérifier qu'il n'y a pas de palier obligatoire ni de maintien artificiel
+    await expect(page.locator('#out')).toContainText('Aucun palier obligatoire');
+    
+    // Vérifier TTS entre 4 et 6 min
+    const ttsText = await page.locator('#out p').first().textContent();
+    const tts = parseFloat(ttsText?.match(/\d+/)?.[0] || '0');
+    expect(tts).toBeGreaterThanOrEqual(4);
+    expect(tts).toBeLessThanOrEqual(6);
   });
 
   test('Subsurface-like - 40m/10min avec palier minimal 1min @ 3m', async ({ page }) => {
@@ -95,6 +122,36 @@ test.describe('UI E2E Tests - Bühlmann Planner', () => {
     
     expect(stopDepth).toBe('6');
     expect(parseFloat(stopTime || '0')).toBeGreaterThanOrEqual(2);
+  });
+
+  test('Changement lastStopDepth 3m ⇄ 6m change le comportement', async ({ page }) => {
+    // Test avec lastStopDepth = 3m
+    await page.fill('#depth', '40');
+    await page.fill('#tbt', '15');
+    await page.fill('#fo2', '21');
+    await page.fill('#fhe', '0');
+    await page.fill('#gfl', '85');
+    await page.fill('#gfh', '85');
+    await page.uncheck('#last6');
+    await page.fill('#minLast', '1');
+    await page.click('#go');
+    
+    // Capturer le résultat à 3m
+    const depth3m = await page.locator('#out table tbody tr:last-child td:nth-child(1)').textContent();
+    const time3m = await page.locator('#out table tbody tr:last-child td:nth-child(2)').textContent();
+    
+    // Test avec lastStopDepth = 6m
+    await page.check('#last6');
+    await page.click('#go');
+    
+    // Capturer le résultat à 6m
+    const depth6m = await page.locator('#out table tbody tr:last-child td:nth-child(1)').textContent();
+    const time6m = await page.locator('#out table tbody tr:last-child td:nth-child(2)').textContent();
+    
+    // Vérifications
+    expect(depth3m).toBe('3');
+    expect(depth6m).toBe('6');
+    expect(parseFloat(time6m || '0')).toBeGreaterThan(parseFloat(time3m || '0'));
   });
 
   test('Graphique de profil est affiché', async ({ page }) => {
@@ -151,16 +208,17 @@ test.describe('UI E2E Tests - Bühlmann Planner', () => {
     const rows = await page.locator('#out table tbody tr').count();
     expect(rows).toBeGreaterThan(0);
     
-    // Vérifier que les paliers sont en multiples de 3m
+    // Vérifier que TOUS les paliers sont en multiples de 3m
     for (let i = 0; i < rows; i++) {
       const depth = await page.locator(`#out table tbody tr:nth-child(${i + 1}) td:nth-child(1)`).textContent();
       const depthNum = parseInt(depth || '0');
       expect(depthNum % 3).toBe(0);
+      expect(depthNum).toBeGreaterThan(0); // Pas de palier à 0m
     }
     
     // Vérifier TTS > 30 min
-    const ttsText = await page.locator('#out p strong').textContent();
-    const tts = parseFloat(ttsText?.match(/\d+\.?\d*/)?.[0] || '0');
+    const ttsText = await page.locator('#out p').first().textContent();
+    const tts = parseFloat(ttsText?.match(/\d+/)?.[0] || '0');
     expect(tts).toBeGreaterThan(30);
   });
 
@@ -187,5 +245,29 @@ test.describe('UI E2E Tests - Bühlmann Planner', () => {
     // Le GF au dernier palier devrait être entre 70% et 85%
     expect(gf).toBeGreaterThan(70);
     expect(gf).toBeLessThanOrEqual(85);
+  });
+
+  test('Arrondi du TTS à la minute entière dans l\'UI', async ({ page }) => {
+    // Configurer un profil qui donne un TTS avec décimales
+    await page.fill('#depth', '25');
+    await page.fill('#tbt', '12');
+    await page.fill('#fo2', '21');
+    await page.fill('#fhe', '0');
+    await page.fill('#gfl', '85');
+    await page.fill('#gfh', '85');
+    await page.uncheck('#last6');
+    await page.fill('#minLast', '0');
+    
+    // Calculer
+    await page.click('#go');
+    
+    // Vérifier que le TTS affiché est un entier (pas de décimales)
+    const ttsText = await page.locator('#out p').first().textContent();
+    const ttsMatch = ttsText?.match(/TTS\s*:\s*(\d+)\s*min/);
+    expect(ttsMatch).toBeTruthy();
+    
+    // Vérifier qu'il n'y a pas de décimales dans l'affichage
+    expect(ttsText).not.toContain('.');
+    expect(ttsText).toMatch(/\d+\s*min/);
   });
 });

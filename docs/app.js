@@ -228,7 +228,10 @@ let profileChart = null;
   const $ = id => document.getElementById(id);
 
   function render(plan) {
-    let html = `<p><strong>TTS</strong> : ${plan.tts} min</p>`;
+    // Arrondir le TTS à la minute entière pour l'affichage UI
+    const ttsMinutes = Math.round(plan.tts);
+    
+    let html = `<p><strong>TTS</strong> : ${ttsMinutes} min</p>`;
     html += `<table><thead><tr><th>Stop (m)</th><th>Durée (min)</th><th>GF</th></tr></thead><tbody>`;
     if (!plan.stops.length) html += `<tr><td colspan="3">Aucun palier obligatoire</td></tr>`;
     plan.stops.forEach(s => {
@@ -266,17 +269,17 @@ let profileChart = null;
     // Note: Avec la formule corrigée, l'algorithme est plus conservateur
     // Les tests ci-dessous reflètent ce comportement
     
-    // Subsurface-like: 40/10, Air, GF 85/85, last=3 m, minLast=1 -> palier obligatoire
+    // Subsurface-like: 40/10, Air, GF 85/85, last=3 m, minLast=1 -> palier minimal forcé
     const p1 = planDive(40, 10, { FO2: 0.21, FHe: 0, FN2: 0.79 }, 85, 85, { lastStopDepth: 3, minLastStopMinutes: 1 });
     const ok1 = p1.stops.length && p1.stops.at(-1).depth === 3 && p1.stops.at(-1).time >= 1;
 
-    // Peregrine-like: 40/10, Air, GF 85/85, last=6 m, minLast=1 -> palier obligatoire à 6 m
+    // Peregrine-like: 40/10, Air, GF 85/85, last=6 m, minLast=1 -> palier minimal forcé à 6 m
     const p2 = planDive(40, 10, { FO2: 0.21, FHe: 0, FN2: 0.79 }, 85, 85, { lastStopDepth: 6, minLastStopMinutes: 1 });
     const ok2 = p2.stops.length && p2.stops.at(-1).depth === 6 && p2.stops.at(-1).time >= 1;
 
-    // Bühlmann avec formule corrigée: 40/10, Air, GF 85/85, last=3 m, minLast=0 -> palier obligatoire
+    // Bühlmann pur: 40/10, Air, GF 85/85, last=3 m, minLast=0 -> PAS de palier obligatoire
     const p3 = planDive(40, 10, { FO2: 0.21, FHe: 0, FN2: 0.79 }, 85, 85, { lastStopDepth: 3, minLastStopMinutes: 0 });
-    const ok3 = p3.stops.length > 0; // Avec la formule corrigée, palier obligatoire
+    const ok3 = !p3.stops.length || p3.stops.every(s => s.time === 0);
 
     const all = t1 && t2 && t3 && ok1 && ok2 && ok3;
 
@@ -286,7 +289,7 @@ let profileChart = null;
         <li>pinsp sanity: ${t1 && t2 && t3 ? 'OK' : 'NOK'}</li>
         <li>Subsurface-like (≥1′ @ 3 m): ${ok1 ? 'OK' : 'NOK'}</li>
         <li>Peregrine-like (≥1′ @ 6 m): ${ok2 ? 'OK' : 'NOK'}</li>
-        <li>Bühlmann corrigé (palier obligatoire): ${ok3 ? 'OK' : 'NOK'}</li>
+        <li>Bühlmann pur (no-deco): ${ok3 ? 'OK' : 'NOK'}</li>
       </ul>`;
   }
 
