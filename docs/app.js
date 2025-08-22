@@ -29,12 +29,92 @@ let profileChart = null;
 
   // Pas de palier & vitesses
   const STOP_STEP = 3;   // m
-  const ASCENT_RATE = 9; // m/min
+  const ASCENT_RATE = 10; // m/min
   const DESCENT_RATE = 19; // m/min
+  
+  // Tables de toxicité oxygène (CNS et OTU)
+  const CNS_TABLE = [
+    { ppo2: 0.5, cns_per_min: 0 },
+    { ppo2: 0.6, cns_per_min: 0 },
+    { ppo2: 0.7, cns_per_min: 0 },
+    { ppo2: 0.8, cns_per_min: 0 },
+    { ppo2: 0.9, cns_per_min: 0 },
+    { ppo2: 1.0, cns_per_min: 0 },
+    { ppo2: 1.1, cns_per_min: 0.5 },
+    { ppo2: 1.2, cns_per_min: 0.83 },
+    { ppo2: 1.3, cns_per_min: 1.25 },
+    { ppo2: 1.4, cns_per_min: 1.67 },
+    { ppo2: 1.5, cns_per_min: 2.5 },
+    { ppo2: 1.6, cns_per_min: 5.0 }
+  ];
+  
+  const OTU_TABLE = [
+    { ppo2: 0.5, otu_per_min: 0.5 },
+    { ppo2: 0.6, otu_per_min: 0.64 },
+    { ppo2: 0.7, otu_per_min: 0.74 },
+    { ppo2: 0.8, otu_per_min: 0.83 },
+    { ppo2: 0.9, otu_per_min: 0.92 },
+    { ppo2: 1.0, otu_per_min: 1.0 },
+    { ppo2: 1.1, otu_per_min: 1.09 },
+    { ppo2: 1.2, otu_per_min: 1.18 },
+    { ppo2: 1.3, otu_per_min: 1.27 },
+    { ppo2: 1.4, otu_per_min: 1.35 },
+    { ppo2: 1.5, otu_per_min: 1.44 },
+    { ppo2: 1.6, otu_per_min: 1.52 }
+  ];
 
   // ----- Utilitaires -----
   function pAmb(depthM) { return SURFACE + depthM * BAR_PER_M; }
   function pinsp(pAmbBar, fInert) { return Math.max(0, (pAmbBar - PH2O) * fInert); }
+  function ppo2(depthM, fo2) { return pAmb(depthM) * fo2; }
+  
+  // Calcul CNS par minute selon la PPO2
+  function getCNSRate(ppo2Value) {
+    if (ppo2Value <= 1.0) return 0;
+    if (ppo2Value >= 1.6) return 5.0;
+    
+    for (let i = 0; i < CNS_TABLE.length - 1; i++) {
+      if (ppo2Value >= CNS_TABLE[i].ppo2 && ppo2Value < CNS_TABLE[i + 1].ppo2) {
+        // Interpolation linéaire
+        const p1 = CNS_TABLE[i];
+        const p2 = CNS_TABLE[i + 1];
+        const ratio = (ppo2Value - p1.ppo2) / (p2.ppo2 - p1.ppo2);
+        return p1.cns_per_min + ratio * (p2.cns_per_min - p1.cns_per_min);
+      }
+    }
+    return 0;
+  }
+  
+  // Calcul OTU par minute selon la PPO2
+  function getOTURate(ppo2Value) {
+    if (ppo2Value < 0.5) return 0;
+    if (ppo2Value >= 1.6) return 1.52;
+    
+    for (let i = 0; i < OTU_TABLE.length - 1; i++) {
+      if (ppo2Value >= OTU_TABLE[i].ppo2 && ppo2Value < OTU_TABLE[i + 1].ppo2) {
+        // Interpolation linéaire
+        const p1 = OTU_TABLE[i];
+        const p2 = OTU_TABLE[i + 1];
+        const ratio = (ppo2Value - p1.ppo2) / (p2.ppo2 - p1.ppo2);
+        return p1.otu_per_min + ratio * (p2.otu_per_min - p1.otu_per_min);
+      }
+    }
+    return ppo2Value > 0.5 ? Math.pow((ppo2Value - 0.5) / 0.5, 0.83) : 0;
+  }
+  
+  // Calcul de la consommation de gaz
+  function calculateGasConsumption(depthM, durationMin, sac, tankVolume, fo2) {
+    const pressure = pAmb(depthM);
+    const consumption = sac * pressure * durationMin; // litres à 1 bar
+    const tankPressure = consumption / tankVolume; // bars consommés
+    const ppo2Value = ppo2(depthM, fo2);
+    
+    return {
+      consumption: Math.round(consumption),
+      tankPressure: Math.round(tankPressure),
+      ppo2: ppo2Value
+    };
+  }
 
   function initTissues() {
     return {
@@ -88,6 +168,7 @@ let profileChart = null;
    * - remonte vers le premier palier (GF low)
    * - tient chaque palier jusqu'à autorisation d'aller 3 m plus haut
    * - dernier palier à 3 ou 6 m selon options
+   * - calcule la consommation de gaz et toxicité O2
    */
   function planDive(depthM, bottomMin, gas, gfLowPct, gfHighPct, opts) {
     const gfL = gfLowPct / 100, gfH = gfHighPct / 100;
@@ -98,6 +179,14 @@ let profileChart = null;
     let decoTime = 0;  // Temps de décompression seulement
     let cur = 0;
     
+    // Variables pour consommation et toxicité
+    let totalCNS = 0;
+    let totalOTU = 0;
+    let totalGasConsumption = 0;
+    const sac = opts?.sac || 20; // l/min par défaut
+    const tankVolume = opts?.tankVolume || 12; // litres par défaut
+    const segments = [];
+    
     // Calcul temps de descente
     const descentTime = Math.ceil(depthM / DESCENT_RATE);
 
@@ -107,13 +196,31 @@ let profileChart = null;
       for (let i = 0; i < mins; i++) {
         const next = Math.min(depthM, cur + DESCENT_RATE);
         updateConstantDepth(st, next, gas, 1);
+        
+        // Calculs toxicité et consommation
+        const ppo2Value = ppo2(next, gas.FO2);
+        totalCNS += getCNSRate(ppo2Value);
+        totalOTU += getOTURate(ppo2Value);
+        const gasUsed = calculateGasConsumption(next, 1, sac, tankVolume, gas.FO2);
+        totalGasConsumption += gasUsed.consumption;
+        
         cur = next;
       }
+      segments.push({ phase: 'descente', depth: depthM, duration: mins, avgDepth: depthM / 2 });
     }
 
     // Fond
     if (bottomMin > 0) {
       updateConstantDepth(st, depthM, gas, bottomMin);
+      
+      // Calculs toxicité et consommation au fond
+      const ppo2Value = ppo2(depthM, gas.FO2);
+      totalCNS += getCNSRate(ppo2Value) * bottomMin;
+      totalOTU += getOTURate(ppo2Value) * bottomMin;
+      const gasUsed = calculateGasConsumption(depthM, bottomMin, sac, tankVolume, gas.FO2);
+      totalGasConsumption += gasUsed.consumption;
+      
+      segments.push({ phase: 'fond', depth: depthM, duration: bottomMin, avgDepth: depthM });
       cur = depthM;
     }
 
@@ -127,8 +234,17 @@ let profileChart = null;
       for (let i = 0; i < mins; i++) {
         const next = Math.max(firstStop, cur - ASCENT_RATE);
         updateConstantDepth(st, next, gas, 1);
+        
+        // Calculs toxicité et consommation
+        const ppo2Value = ppo2(next, gas.FO2);
+        totalCNS += getCNSRate(ppo2Value);
+        totalOTU += getOTURate(ppo2Value);
+        const gasUsed = calculateGasConsumption(next, 1, sac, tankVolume, gas.FO2);
+        totalGasConsumption += gasUsed.consumption;
+        
         cur = next; decoTime++;
       }
+      segments.push({ phase: 'remontée', depth: firstStop, duration: mins, avgDepth: (cur + firstStop) / 2 });
     }
 
     const stops = [];
@@ -146,6 +262,14 @@ let profileChart = null;
         if (canLeave) break;
 
         updateConstantDepth(st, stopDepth, gas, 1);
+        
+        // Calculs toxicité et consommation pendant le palier
+        const ppo2Value = ppo2(stopDepth, gas.FO2);
+        totalCNS += getCNSRate(ppo2Value);
+        totalOTU += getOTURate(ppo2Value);
+        const gasUsed = calculateGasConsumption(stopDepth, 1, sac, tankVolume, gas.FO2);
+        totalGasConsumption += gasUsed.consumption;
+        
         held++; decoTime++;
         // garde-fou
         if (held > 360) break;
@@ -153,6 +277,7 @@ let profileChart = null;
 
       if (held > 0) {
         stops.push({ depth: stopDepth, time: held, gf: gfAtDepth(stopDepth, gfL, gfH, firstStop) });
+        segments.push({ phase: 'palier', depth: stopDepth, duration: held, avgDepth: stopDepth });
       }
 
       // Remonter de 3 m (ou vers surface si on est au dernier palier)
@@ -162,6 +287,14 @@ let profileChart = null;
         for (let i = 0; i < mins; i++) {
           const d = Math.max(nextDepth, cur - ASCENT_RATE);
           updateConstantDepth(st, d, gas, 1);
+          
+          // Calculs toxicité et consommation
+          const ppo2Value = ppo2(d, gas.FO2);
+          totalCNS += getCNSRate(ppo2Value);
+          totalOTU += getOTURate(ppo2Value);
+          const gasUsed = calculateGasConsumption(d, 1, sac, tankVolume, gas.FO2);
+          totalGasConsumption += gasUsed.consumption;
+          
           cur = d; decoTime++;
         }
       }
@@ -183,6 +316,9 @@ let profileChart = null;
 
     // Calculs finaux des temps
     const totalDiveTime = descentTime + bottomMin + decoTime;
+    const tankPressureUsed = Math.round(totalGasConsumption / tankVolume);
+    const startPressure = opts?.startPressure || 200;
+    const gasRemaining = Math.max(0, startPressure - tankPressureUsed);
 
     // Arrondi d'affichage (contrat = minute)
     return {
@@ -192,6 +328,16 @@ let profileChart = null;
       totalDiveTime: Math.round(totalDiveTime), // Temps total de plongée
       descentTime: Math.round(descentTime),     // Temps de descente
       bottomTime: bottomMin,                    // Temps de fond (déjà en minutes)
+      // Nouveaux calculs
+      cns: Math.round(totalCNS * 10) / 10,     // CNS en %
+      otu: Math.round(totalOTU),               // OTU
+      gasConsumption: Math.round(totalGasConsumption), // Litres consommés
+      tankPressureUsed: tankPressureUsed,     // Bars consommés
+      gasRemaining: gasRemaining,             // Bars restants
+      startPressure: startPressure,           // Pression initiale
+      sac: sac,                               // SAC utilisé
+      tankVolume: tankVolume,                 // Volume bouteille
+      segments: segments                      // Détail des segments
     };
   }
 
@@ -707,7 +853,7 @@ let profileChart = null;
     }
   }
   
-  function render(plan, isValid) {
+  function render(plan, isValid, depth, gfL, gfH) {
     // Mettre à jour le runtime display
     updateRuntimeDisplay(plan.totalDiveTime);
     
@@ -737,6 +883,26 @@ let profileChart = null;
               <div style="font-size: 0.85rem; color: #666; margin-top: 5px;">Décompression (min)</div>
             </div>
           </div>
+          
+          <!-- Section consommation de gaz -->
+          <div style="margin-top: 25px; padding: 20px; background: rgba(0, 168, 230, 0.05); border-radius: 12px; border-left: 4px solid var(--secondary);">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 15px;">
+              <div style="text-align: center;">
+                <div style="font-size: 1.6rem; font-weight: 700; color: var(--primary);">${plan.gasConsumption}l</div>
+                <div style="font-size: 0.9rem; color: #666;">Consommé</div>
+              </div>
+              <div style="text-align: center;">
+                <div style="font-size: 1.6rem; font-weight: 700; color: ${plan.gasRemaining < 50 ? 'var(--danger)' : 'var(--success)'};">${plan.gasRemaining}bar</div>
+                <div style="font-size: 0.9rem; color: #666;">Restant</div>
+              </div>
+            </div>
+            <div style="font-size: 0.9rem; color: #666; text-align: center;">
+              <strong>Consommation de gaz (SAC ${plan.sac}l/min):</strong><br>
+              ${plan.tankPressureUsed}/${plan.startPressure}bar sur ${plan.tankVolume}l
+              (${Math.round(plan.gasConsumption)}l à 1 bar)
+            </div>
+          </div>
+          
           ${plan.stops.length === 0 ? 
             '<div class="no-stops"><i class="fas fa-check-circle"></i>Aucun palier obligatoire</div>' : 
             `<div class="info-message">
@@ -747,32 +913,277 @@ let profileChart = null;
         </div>
         <div class="results-card">
           <h3><i class="fas fa-table"></i> Paliers de décompression</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>Profondeur (m)</th>
-                <th>Durée (min)</th>
-                <th>Gradient Factor (%)</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${plan.stops.length === 0 ? 
-                '<tr><td colspan="3" style="text-align: center; color: #00c896;">Aucun palier obligatoire</td></tr>' :
-                plan.stops.map(s => `
-                  <tr>
-                    <td>${s.depth} m</td>
-                    <td>${s.time} min</td>
-                    <td>${Math.round(s.gf * 100)}%</td>
-                  </tr>
-                `).join('')
+          <!-- Graphique de profil de plongée -->
+          <div style="margin-bottom: 25px;">
+            <canvas id="diveProfileChart" width="800" height="300" style="max-width: 100%; border-radius: 12px; box-shadow: 0 8px 25px rgba(0,0,0,0.2);"></canvas>
+          </div>
+
+          <!-- Plan de plongée détaillé -->
+          <div style="background: #3c3c3c; color: #ffffff; padding: 25px; border-radius: 12px; font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Source Code Pro', monospace; margin-bottom: 20px; border: 1px solid #555; box-shadow: 0 8px 25px rgba(0,0,0,0.3);">
+            <div style="font-size: 0.95rem; margin-bottom: 18px; color: #cccccc;">
+              <span style="color: #5dade2; font-weight: 600;">📊 Plan de Plongée Bühlmann ZH-L16C</span><br>
+              <span style="color: #cccccc; font-size: 0.9rem;">Généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}</span><br>
+              <span style="color: #ffffff; font-size: 0.9rem; margin-top: 8px; display: inline-block;">🕒 Durée totale : ${plan.totalDiveTime}min</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 100px 80px 80px 80px; gap: 20px; margin-bottom: 18px; font-size: 0.9rem; padding-bottom: 8px; border-bottom: 1px solid #555;">
+              <div style="color: #ffffff; font-weight: 600;">profondeur</div>
+              <div style="color: #ffffff; font-weight: 600;">durée</div>
+              <div style="color: #ffffff; font-weight: 600;">runtime</div>
+              <div style="color: #ffffff; font-weight: 600;">gaz</div>
+            </div>
+            ${(() => {
+              let runtime = 0;
+              const rows = [];
+              
+              // Descente
+              runtime += plan.descentTime;
+              rows.push(`
+                <div style="display: grid; grid-template-columns: 100px 80px 80px 80px; gap: 20px; margin-bottom: 6px; font-size: 0.9rem;">
+                  <div style="color: #ffffff;">⤷ ${depth}m</div>
+                  <div style="color: #ffffff;">${plan.descentTime}min</div>
+                  <div style="color: #ffffff;">${runtime}min</div>
+                  <div style="color: #ff6b6b;">air</div>
+                </div>
+              `);
+              
+              // Fond
+              runtime += plan.bottomTime;
+              rows.push(`
+                <div style="display: grid; grid-template-columns: 100px 80px 80px 80px; gap: 20px; margin-bottom: 6px; font-size: 0.9rem;">
+                  <div style="color: #ffffff;">→ ${depth}m</div>
+                  <div style="color: #ffffff;">${plan.bottomTime}min</div>
+                  <div style="color: #ffffff;">${runtime}min</div>
+                  <div></div>
+                </div>
+              `);
+              
+              // Paliers
+              let currentDepth = depth;
+              plan.stops.forEach(stop => {
+                // Temps de remontée vers le palier
+                const ascentTime = Math.ceil((currentDepth - stop.depth) / ASCENT_RATE);
+                if (ascentTime > 0) {
+                  runtime += ascentTime;
+                  rows.push(`
+                    <div style="display: grid; grid-template-columns: 100px 80px 80px 80px; gap: 20px; margin-bottom: 6px; font-size: 0.9rem; opacity: 0.8;">
+                      <div style="color: #aaaaaa;">→ remontée ${stop.depth}m</div>
+                      <div style="color: #aaaaaa;">${ascentTime}min</div>
+                      <div style="color: #aaaaaa;">${runtime}min</div>
+                      <div></div>
+                    </div>
+                  `);
+                }
+                
+                // Temps du palier
+                runtime += stop.time;
+                rows.push(`
+                  <div style="display: grid; grid-template-columns: 100px 80px 80px 80px; gap: 20px; margin-bottom: 6px; font-size: 0.9rem;">
+                    <div style="color: #ffffff;">⏸ palier ${stop.depth}m</div>
+                    <div style="color: #ffffff;">${stop.time}min</div>
+                    <div style="color: #ffffff;">${runtime}min</div>
+                    <div></div>
+                  </div>
+                `);
+                currentDepth = stop.depth;
+              });
+              
+              // Surface
+              if (plan.stops.length > 0) {
+                const finalAscentTime = Math.ceil(currentDepth / ASCENT_RATE);
+                runtime += finalAscentTime;
+                rows.push(`
+                  <div style="display: grid; grid-template-columns: 100px 80px 80px 80px; gap: 20px; margin-bottom: 6px; font-size: 0.9rem; opacity: 0.8;">
+                    <div style="color: #aaaaaa;">→ surface</div>
+                    <div style="color: #aaaaaa;">${finalAscentTime}min</div>
+                    <div style="color: #aaaaaa;">${runtime}min</div>
+                    <div></div>
+                  </div>
+                `);
               }
-            </tbody>
-          </table>
+              
+              return rows.join('');
+            })()}
+            
+            <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #555; color: #cccccc; font-size: 0.9rem; line-height: 1.4;">
+              <div style="margin-bottom: 8px;">
+                <span style="color: #ffffff; font-weight: 600;">Modèle de déco :</span> Bühlmann ZHL-16C avec GF Low = ${gfL}% et GF High = ${gfH}%
+              </div>
+              <div style="margin-bottom: 15px;">
+                <span style="color: #ffffff; font-weight: 600;">Pression ATM :</span> 1 013mbar (0m)
+              </div>
+              <div style="margin-bottom: 8px;">
+                <span style="color: #ffffff; font-weight: 600;">Consommation de gaz (basé sur un SAC de ${plan.sac}l/min):</span>
+              </div>
+              <div style="margin-bottom: 8px;">${plan.tankPressureUsed}/${plan.startPressure}bar sur ${plan.tankVolume}l (${plan.gasConsumption}l consommés)</div>
+              <div style="margin-bottom: 5px;"><span style="color: #17a2b8;">— Gaz minimum</span> (basé sur 4,0xConsommation d'air (SAC)/+4min@${depth}m): ${Math.round(plan.tankPressureUsed * 4 + (4 * plan.sac * pAmb(depth) / plan.tankVolume))}/${plan.startPressure}bar</div>
+              <div><span style="color: #888;">Δ: ${Math.max(0, plan.startPressure - Math.round(plan.tankPressureUsed * 4 + (4 * plan.sac * pAmb(depth) / plan.tankVolume)))}bar</span></div>
+            </div>
+          </div>
         </div>
       </div>
     `;
     
     $('out').innerHTML = resultsHTML;
+    
+    // Créer le graphique de profil de plongée
+    setTimeout(() => createDiveProfileChart(plan, depth), 100);
+  }
+
+  function createDiveProfileChart(plan, maxDepth) {
+    const canvas = document.getElementById('diveProfileChart');
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Effacer le canvas
+    ctx.clearRect(0, 0, width, height);
+    
+    // Configuration du graphique
+    const margin = { top: 30, right: 40, bottom: 40, left: 60 };
+    const chartWidth = width - margin.left - margin.right;
+    const chartHeight = height - margin.top - margin.bottom;
+    
+    // Données du profil
+    const profileData = [];
+    let currentTime = 0;
+    
+    // Surface
+    profileData.push({ time: 0, depth: 0 });
+    
+    // Descente
+    const descentTime = plan.descentTime;
+    profileData.push({ time: descentTime, depth: maxDepth });
+    currentTime = descentTime;
+    
+    // Fond
+    currentTime += plan.bottomTime;
+    profileData.push({ time: currentTime, depth: maxDepth });
+    
+    // Paliers
+    plan.stops.forEach(stop => {
+      currentTime += Math.ceil((maxDepth - stop.depth) / ASCENT_RATE);
+      profileData.push({ time: currentTime, depth: stop.depth });
+      currentTime += stop.time;
+      profileData.push({ time: currentTime, depth: stop.depth });
+      maxDepth = stop.depth;
+    });
+    
+    // Remontée finale à la surface
+    currentTime += Math.ceil(maxDepth / ASCENT_RATE);
+    profileData.push({ time: currentTime, depth: 0 });
+    
+    // Échelles
+    const maxTime = Math.max(...profileData.map(d => d.time));
+    const maxDepthValue = Math.max(...profileData.map(d => d.depth));
+    
+    const timeScale = (time) => margin.left + (time / maxTime) * chartWidth;
+    const depthScale = (depth) => margin.top + (depth / maxDepthValue) * chartHeight;
+    
+    // Dégradé de fond
+    const gradient = ctx.createLinearGradient(0, margin.top, 0, height - margin.bottom);
+    gradient.addColorStop(0, 'rgba(93, 173, 226, 0.1)');
+    gradient.addColorStop(0.3, 'rgba(23, 162, 184, 0.2)');
+    gradient.addColorStop(1, 'rgba(40, 167, 69, 0.3)');
+    
+    // Dessiner le fond du graphique
+    ctx.fillStyle = '#2b2b2b';
+    ctx.fillRect(0, 0, width, height);
+    
+    // Grille
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.lineWidth = 1;
+    
+    // Lignes verticales (temps)
+    for (let i = 0; i <= 6; i++) {
+      const x = margin.left + (i / 6) * chartWidth;
+      ctx.beginPath();
+      ctx.moveTo(x, margin.top);
+      ctx.lineTo(x, height - margin.bottom);
+      ctx.stroke();
+    }
+    
+    // Lignes horizontales (profondeur)
+    for (let i = 0; i <= 5; i++) {
+      const y = margin.top + (i / 5) * chartHeight;
+      ctx.beginPath();
+      ctx.moveTo(margin.left, y);
+      ctx.lineTo(width - margin.right, y);
+      ctx.stroke();
+    }
+    
+    // Remplir l'aire sous la courbe
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.moveTo(timeScale(0), depthScale(0));
+    profileData.forEach(point => {
+      ctx.lineTo(timeScale(point.time), depthScale(point.depth));
+    });
+    ctx.lineTo(timeScale(maxTime), depthScale(0));
+    ctx.closePath();
+    ctx.fill();
+    
+    // Tracer la ligne de profil
+    ctx.strokeStyle = '#5dade2';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    profileData.forEach((point, index) => {
+      if (index === 0) {
+        ctx.moveTo(timeScale(point.time), depthScale(point.depth));
+      } else {
+        ctx.lineTo(timeScale(point.time), depthScale(point.depth));
+      }
+    });
+    ctx.stroke();
+    
+    // Points sur la courbe
+    ctx.fillStyle = '#ffffff';
+    profileData.forEach(point => {
+      ctx.beginPath();
+      ctx.arc(timeScale(point.time), depthScale(point.depth), 4, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.strokeStyle = '#5dade2';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    });
+    
+    // Axes et labels
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '12px SF Mono, Monaco, monospace';
+    ctx.textAlign = 'center';
+    
+    // Labels temps (axe X)
+    for (let i = 0; i <= 6; i++) {
+      const time = Math.round((i / 6) * maxTime);
+      const x = margin.left + (i / 6) * chartWidth;
+      ctx.fillText(`${time}min`, x, height - 15);
+    }
+    
+    // Labels profondeur (axe Y)
+    ctx.textAlign = 'right';
+    for (let i = 0; i <= 5; i++) {
+      const depth = Math.round((i / 5) * maxDepthValue);
+      const y = margin.top + (i / 5) * chartHeight;
+      ctx.fillText(`${depth}m`, margin.left - 10, y + 4);
+    }
+    
+    // Titre du graphique
+    ctx.fillStyle = '#5dade2';
+    ctx.font = 'bold 16px SF Mono, Monaco, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('📊 Profil de Plongée', width / 2, 20);
+    
+    // Labels des axes
+    ctx.fillStyle = '#cccccc';
+    ctx.font = '12px SF Mono, Monaco, monospace';
+    ctx.fillText('Temps (minutes)', width / 2, height - 5);
+    
+    ctx.save();
+    ctx.translate(15, height / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('Profondeur (mètres)', 0, 0);
+    ctx.restore();
   }
 
   function compute() {
@@ -791,7 +1202,10 @@ let profileChart = null;
       const gfH = +$('gfh').value;
       const opts = {
         lastStopDepth: $('last6').checked ? 6 : 3,
-        minLastStopMinutes: +$('minLast').value | 0
+        minLastStopMinutes: +$('minLast').value | 0,
+        sac: +$('sac').value,
+        tankVolume: +$('tankVolume').value,
+        startPressure: +$('startPressure').value
       };
 
     // Validation des entrées
@@ -810,7 +1224,7 @@ let profileChart = null;
       const plan = planDive(depth, tbt, { FO2, FHe, FN2 }, gfL, gfH, opts);
       const isValid = runSilentValidation();
       
-      render(plan, isValid);
+      render(plan, isValid, depth, gfL, gfH);
       updateProfileChartWithCeiling(depth, tbt, { FO2, FHe, FN2 }, gfL, gfH, opts, plan);
       
       // Restaurer le bouton
@@ -831,22 +1245,25 @@ let profileChart = null;
     // Les tests ci-dessous reflètent ce comportement
     
     // Subsurface-like: 40/10, Air, GF 85/85, last=3 m, minLast=1 -> palier obligatoire
-    const p1 = planDive(40, 10, { FO2: 0.21, FHe: 0, FN2: 0.79 }, 85, 85, { lastStopDepth: 3, minLastStopMinutes: 1 });
+    const p1 = planDive(40, 10, { FO2: 0.21, FHe: 0, FN2: 0.79 }, 85, 85, { lastStopDepth: 3, minLastStopMinutes: 1, sac: 20, tankVolume: 12, startPressure: 200 });
     const ok1 = p1.stops.length && p1.stops.at(-1).depth === 3 && p1.stops.at(-1).time >= 1;
 
     // Peregrine-like: 40/10, Air, GF 85/85, last=6 m, minLast=1 -> palier obligatoire à 6 m
-    const p2 = planDive(40, 10, { FO2: 0.21, FHe: 0, FN2: 0.79 }, 85, 85, { lastStopDepth: 6, minLastStopMinutes: 1 });
+    const p2 = planDive(40, 10, { FO2: 0.21, FHe: 0, FN2: 0.79 }, 85, 85, { lastStopDepth: 6, minLastStopMinutes: 1, sac: 20, tankVolume: 12, startPressure: 200 });
     const ok2 = p2.stops.length && p2.stops.at(-1).depth === 6 && p2.stops.at(-1).time >= 1;
 
     // Bühlmann avec formule corrigée: 40/10, Air, GF 85/85, last=3 m, minLast=0 -> palier obligatoire
-    const p3 = planDive(40, 10, { FO2: 0.21, FHe: 0, FN2: 0.79 }, 85, 85, { lastStopDepth: 3, minLastStopMinutes: 0 });
+    const p3 = planDive(40, 10, { FO2: 0.21, FHe: 0, FN2: 0.79 }, 85, 85, { lastStopDepth: 3, minLastStopMinutes: 0, sac: 20, tankVolume: 12, startPressure: 200 });
     const ok3 = p3.stops.length > 0; // Avec la formule corrigée, palier obligatoire
 
     // Test multi-paliers : plongée profonde
-    const p4 = planDive(60, 15, { FO2: 0.21, FHe: 0, FN2: 0.79 }, 30, 85, { lastStopDepth: 3, minLastStopMinutes: 1 });
+    const p4 = planDive(60, 15, { FO2: 0.21, FHe: 0, FN2: 0.79 }, 30, 85, { lastStopDepth: 3, minLastStopMinutes: 1, sac: 20, tankVolume: 12, startPressure: 200 });
     const ok4 = p4.stops.length > 1; // Doit avoir plusieurs paliers
+    
+    // Test CNS et OTU
+    const ok5 = p1.cns >= 0 && p1.otu >= 0 && p1.gasConsumption > 0;
 
-    const all = t1 && t2 && t3 && ok1 && ok2 && ok3 && ok4;
+    const all = t1 && t2 && t3 && ok1 && ok2 && ok3 && ok4 && ok5;
 
     const resultsHTML = `
       <div class="results-card" style="max-width: 600px; margin: 0 auto;">
@@ -890,6 +1307,12 @@ let profileChart = null;
               <td>Multi-paliers (plongée profonde)</td>
               <td style="color: ${ok4 ? '#00c896' : '#ff4757'}">
                 ${ok4 ? '✓ OK' : '✗ Échec'} ${p4.stops.length} paliers
+              </td>
+            </tr>
+            <tr>
+              <td>CNS/OTU et consommation gaz</td>
+              <td style="color: ${ok5 ? '#00c896' : '#ff4757'}">
+                ${ok5 ? '✓ OK' : '✗ Échec'} CNS: ${p1.cns}%, OTU: ${p1.otu}, Gaz: ${p1.gasConsumption}l
               </td>
             </tr>
           </tbody>

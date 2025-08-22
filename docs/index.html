@@ -14,18 +14,29 @@
     
     <style>
         :root {
-            --primary: #0066cc;
-            --primary-dark: #0052a3;
-            --primary-light: #e6f0ff;
-            --secondary: #00a8e6;
-            --success: #00c896;
-            --danger: #ff4757;
-            --warning: #ffa502;
-            --dark: #2c3e50;
-            --light: #f8f9fa;
-            --border: #e1e8ed;
-            --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.1);
+            /* Subsurface inspired dark theme */
+            --bg-primary: #2b2b2b;
+            --bg-secondary: #3c3c3c;
+            --bg-tertiary: #4a4a4a;
+            --text-primary: #ffffff;
+            --text-secondary: #cccccc;
+            --text-muted: #888888;
+            --accent-blue: #5dade2;
+            --accent-cyan: #17a2b8;
+            --accent-red: #e74c3c;
+            --accent-green: #28a745;
+            --accent-orange: #fd7e14;
+            --border-light: #555555;
+            --border-dark: #333333;
+            --shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            --shadow-lg: 0 8px 25px rgba(0, 0, 0, 0.4);
+            
+            /* Legacy support */
+            --primary: var(--accent-blue);
+            --secondary: var(--accent-cyan);
+            --success: var(--accent-green);
+            --danger: var(--accent-red);
+            --warning: var(--accent-orange);
         }
 
         * {
@@ -35,11 +46,11 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Source Code Pro', monospace;
+            background: var(--bg-primary);
             min-height: 100vh;
             padding: 20px;
-            color: var(--dark);
+            color: var(--text-primary);
             position: relative;
             overflow-x: hidden;
         }
@@ -47,14 +58,13 @@
         body::before {
             content: '';
             position: fixed;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle at 20% 50%, rgba(120, 119, 198, 0.3), transparent 50%),
-                        radial-gradient(circle at 80% 80%, rgba(255, 119, 198, 0.2), transparent 50%),
-                        radial-gradient(circle at 40% 20%, rgba(100, 200, 255, 0.2), transparent 50%);
-            animation: float 20s ease-in-out infinite;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                linear-gradient(45deg, transparent 40%, rgba(93, 173, 226, 0.05) 50%, transparent 60%),
+                linear-gradient(-45deg, transparent 40%, rgba(23, 162, 184, 0.05) 50%, transparent 60%);
             z-index: -1;
         }
         
@@ -67,153 +77,202 @@
         .container {
             max-width: 1200px;
             margin: 0 auto;
-            background: white;
-            border-radius: 20px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
             box-shadow: var(--shadow-lg);
             overflow: hidden;
+            border: 1px solid var(--border-dark);
         }
 
         /* Header */
         .header {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-            color: white;
-            padding: 40px;
-            text-align: center;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            padding: 30px;
+            text-align: left;
             position: relative;
-            overflow: hidden;
-        }
-
-        .header::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            right: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
-            animation: pulse 4s ease-in-out infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); opacity: 0.5; }
-            50% { transform: scale(1.1); opacity: 0.3; }
+            border-bottom: 2px solid var(--accent-blue);
         }
 
         h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            position: relative;
-            z-index: 1;
+            font-size: 1.8rem;
+            margin-bottom: 12px;
+            font-weight: 700;
+            color: var(--text-primary);
+            letter-spacing: 0.02em;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        h1 i {
+            color: var(--accent-blue);
+            font-size: 1.6rem;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-3px); }
         }
 
         .subtitle {
-            font-size: 1.1rem;
-            opacity: 0.9;
-            position: relative;
-            z-index: 1;
+            font-size: 1rem;
+            color: var(--text-secondary);
+            font-weight: 400;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
 
         /* Main content */
         .content {
-            padding: 40px;
+            padding: 30px;
+            background: var(--bg-secondary);
         }
 
         /* Input sections */
         .input-section {
-            background: rgba(248, 249, 250, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 16px;
-            padding: 30px;
-            margin-bottom: 30px;
-            border: 1px solid rgba(225, 232, 237, 0.5);
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border-light);
+            transition: all 0.3s ease;
             position: relative;
-            overflow: hidden;
         }
         
-        .input-section::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: linear-gradient(90deg, var(--primary), var(--secondary));
-            transform: scaleX(0);
-            transition: transform 0.4s ease;
-        }
-
         .input-section:hover {
-            box-shadow: 0 10px 40px rgba(0, 102, 204, 0.15);
-            transform: translateY(-3px);
-            border-color: rgba(0, 102, 204, 0.3);
-        }
-        
-        .input-section:hover::before {
-            transform: scaleX(1);
+            border-color: var(--accent-blue);
+            box-shadow: 0 4px 12px rgba(93, 173, 226, 0.2);
         }
 
         .section-title {
-            font-size: 1.3rem;
-            color: var(--primary);
-            margin-bottom: 20px;
+            font-size: 1rem;
+            color: var(--text-primary);
+            margin-bottom: 18px;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
+            font-weight: 600;
+            letter-spacing: 0.01em;
         }
 
         .section-title i {
-            font-size: 1.5rem;
+            font-size: 1.1rem;
+            color: var(--accent-cyan);
         }
 
         .input-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
         }
 
         .input-group {
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 6px;
         }
 
         label {
-            font-weight: 600;
-            color: var(--dark);
-            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
+            font-family: inherit;
         }
 
         label i {
-            color: var(--primary);
-            font-size: 1rem;
+            color: var(--accent-cyan);
+            font-size: 0.9rem;
         }
 
         input[type="number"] {
             width: 100%;
-            padding: 14px 18px;
-            border: 2px solid var(--border);
-            border-radius: 10px;
-            font-size: 1rem;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            background: white;
-            font-weight: 500;
+            padding: 10px 14px;
+            border: 1px solid var(--border-light);
+            border-radius: 4px;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-family: inherit;
         }
 
         input[type="number"]:focus {
             outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 4px rgba(0, 102, 204, 0.1),
-                        0 4px 12px rgba(0, 102, 204, 0.1);
-            transform: translateY(-1px);
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px rgba(93, 173, 226, 0.2), 0 4px 12px rgba(93, 173, 226, 0.1);
+            transform: translateY(-2px);
         }
         
         input[type="number"]:hover:not(:focus) {
-            border-color: rgba(0, 102, 204, 0.4);
+            border-color: var(--accent-cyan);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
+
+        /* Animations d'entrée */
+        .fade-in {
+            animation: fadeInUp 0.8s ease-out;
+        }
+
+        .fade-in:nth-child(2) { animation-delay: 0.1s; }
+        .fade-in:nth-child(3) { animation-delay: 0.2s; }
+        .fade-in:nth-child(4) { animation-delay: 0.3s; }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Amélioration des boutons */
+        button {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 12px rgba(93, 173, 226, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(93, 173, 226, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        button:hover::before {
+            left: 100%;
+        }
+
 
         .checkbox-group {
             display: flex;
@@ -347,12 +406,14 @@
         }
 
         .results-card h3 {
-            color: var(--primary);
+            color: var(--text-primary);
             margin-bottom: 20px;
             display: flex;
             align-items: center;
             gap: 10px;
             position: relative;
+            font-size: 1.2rem;
+            font-weight: 600;
         }
 
         .results-card h3 i {
@@ -533,6 +594,36 @@
             margin-bottom: 15px;
         }
 
+        /* Graphique de profil */
+        #diveProfileChart {
+            background: linear-gradient(135deg, #2b2b2b 0%, #3c3c3c 100%);
+            border: 2px solid var(--border-light);
+            transition: all 0.3s ease;
+            display: block;
+            margin: 0 auto;
+        }
+
+        #diveProfileChart:hover {
+            border-color: var(--accent-blue);
+            box-shadow: 0 12px 35px rgba(93, 173, 226, 0.2);
+        }
+
+        /* Amélioration des résultats */
+        .results {
+            animation: slideInUp 0.8s ease-out;
+        }
+
+        @keyframes slideInUp {
+            from {
+                opacity: 0;
+                transform: translateY(40px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
         /* Loading spinner */
         /* Runtime display */
         .runtime-display {
@@ -625,8 +716,8 @@
     
     <div class="container">
         <div class="header">
-            <h1><i class="fas fa-water"></i> Planificateur Bühlmann ZH-L16C</h1>
-            <p class="subtitle">Calculateur de paliers de décompression avec Gradient Factors</p>
+            <h1><i class="fas fa-water"></i> Bühlmann Dive Planner</h1>
+            <p class="subtitle">Planificateur de décompression professionnel avec algorithme ZH-L16C</p>
         </div>
 
         <div class="content">
@@ -667,6 +758,37 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- Paramètres de consommation -->
+            <div class="input-section fade-in">
+                <h2 class="section-title">
+                    <i class="fas fa-tint"></i>
+                    Consommation de gaz
+                </h2>
+                <div class="input-grid">
+                    <div class="input-group">
+                        <label for="sac">
+                            <i class="fas fa-lungs"></i>
+                            SAC (l/min)
+                        </label>
+                        <input id="sac" type="number" value="20" min="10" max="50" step="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="tankVolume">
+                            <i class="fas fa-fill-drip"></i>
+                            Volume bouteille (l)
+                        </label>
+                        <input id="tankVolume" type="number" value="12" min="5" max="20" step="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="startPressure">
+                            <i class="fas fa-gauge-high"></i>
+                            Pression initiale (bar)
+                        </label>
+                        <input id="startPressure" type="number" value="200" min="100" max="300" step="10">
+                    </div>
+                </div>
+            </div>
 
             <!-- Paramètres de décompression -->
             <div class="input-section fade-in">
@@ -696,12 +818,14 @@
                         </label>
                         <input id="minLast" type="number" value="1" min="0" max="99">
                     </div>
-                    <div class="checkbox-group">
-                        <input id="last6" type="checkbox">
-                        <label for="last6">
-                            <i class="fas fa-ruler-vertical"></i>
-                            Dernier palier à 6m (sinon 3m)
-                        </label>
+                    <div class="input-group">
+                        <div class="checkbox-group">
+                            <input id="last6" type="checkbox">
+                            <label for="last6">
+                                <i class="fas fa-ruler-vertical"></i>
+                                Dernier palier à 6m (sinon 3m)
+                            </label>
+                        </div>
                     </div>
                 </div>
 
