@@ -195,21 +195,43 @@ let profileChart = null;
     };
   }
 
-  // ----- Graphique du profil avec plafond -----
+  // ----- Graphique du profil avec plafond et saturation tissulaire -----
   function updateProfileChartWithCeiling(depthM, bottomMin, gas, gfL, gfH, opts, plan) {
     const points = [];
     const ceilPts = [];
+    const saturationData = [];
+    const gfZones = [];
+    const annotationData = [];
     
     // Re-simule le profil minute par minute pour tracer la courbe + le plafond
     const st = initTissues();
     let t = 0, cur = 0;
+    let maxSaturation = 0;
 
     // Point de départ
     points.push({ x: t, y: 0 });
     ceilPts.push({ x: t, y: 0 });
+    
+    // Fonction pour calculer la saturation maximale des tissus
+    function getMaxSaturation(state, depthM, gf) {
+      let maxSat = 0;
+      const p = pAmb(depthM);
+      for (let i = 0; i < state.pN2.length; i++) {
+        const pn = state.pN2[i];
+        const ph = state.pHe[i];
+        const sum = pn + ph;
+        const a = (A_N2[i] * pn + A_HE[i] * ph) / (sum || 1e-9);
+        const b = (B_N2[i] * pn + B_HE[i] * ph) / (sum || 1e-9);
+        const mValue = (p / b - a) * gf;
+        const saturation = (sum / mValue) * 100;
+        if (saturation > maxSat) maxSat = saturation;
+      }
+      return maxSat;
+    }
 
     // Descente
     let down = Math.ceil(depthM / DESCENT_RATE);
+    annotationData.push({ phase: 'descente', start: t, end: t + down });
     for (let i = 0; i < down; i++) {
       const next = Math.min(depthM, cur + DESCENT_RATE);
       updateConstantDepth(st, next, gas, 1);
@@ -217,12 +239,19 @@ let profileChart = null;
       points.push({ x: t, y: cur });
       
       // Calcul du plafond
-      const gf = gfL / 100; // Pendant la descente, on utilise GF bas
+      const gf = gfL / 100;
       const c = overallCeiling(st, gf);
       ceilPts.push({ x: t, y: c });
+      
+      // Calcul de la saturation
+      const sat = getMaxSaturation(st, cur, gf);
+      saturationData.push({ x: t, y: sat });
+      if (sat > maxSaturation) maxSaturation = sat;
     }
 
     // Fond
+    const bottomStart = t;
+    annotationData.push({ phase: 'fond', start: t, end: t + bottomMin });
     for (let i = 0; i < bottomMin; i++) {
       updateConstantDepth(st, depthM, gas, 1);
       t++; 
@@ -231,17 +260,33 @@ let profileChart = null;
       const gf = gfL / 100;
       const c = overallCeiling(st, gf);
       ceilPts.push({ x: t, y: c });
+      
+      // Calcul de la saturation
+      const sat = getMaxSaturation(st, depthM, gf);
+      saturationData.push({ x: t, y: sat });
+      if (sat > maxSaturation) maxSaturation = sat;
     }
 
     // Reconstruire le profil de remontée en suivant le plan calculé
     cur = depthM;
     const firstCeil = overallCeiling(st, gfL/100);
     const firstStop = plan.firstStopDepth;
+    
+    // Zone de gradient factor
+    if (firstStop > 0) {
+      gfZones.push({
+        type: 'gfLow',
+        start: t,
+        depth: firstStop,
+        label: `GF Low (${gfL}%)`
+      });
+    }
 
     // Remontée vers le premier palier
     if (plan.stops.length > 0 && cur > plan.stops[0].depth) {
       let target = plan.stops[0].depth;
       let mins = Math.ceil((cur - target) / ASCENT_RATE);
+      annotationData.push({ phase: 'remontée', start: t, end: t + mins });
       for (let i = 0; i < mins; i++) {
         const next = Math.max(cur - ASCENT_RATE, target);
         updateConstantDepth(st, next, gas, 1);
@@ -251,6 +296,11 @@ let profileChart = null;
         const gf = gfAtDepth(cur, gfL/100, gfH/100, firstStop);
         const c = overallCeiling(st, gf);
         ceilPts.push({ x: t, y: c });
+        
+        // Calcul de la saturation
+        const sat = getMaxSaturation(st, cur, gf);
+        saturationData.push({ x: t, y: sat });
+        if (sat > maxSaturation) maxSaturation = sat;
       }
     }
 
@@ -261,6 +311,9 @@ let profileChart = null;
         cur = stop.depth;
       }
       
+      const stopStart = t;
+      annotationData.push({ phase: 'palier', start: t, end: t + stop.time, depth: stop.depth });
+      
       // Tenir le palier
       for (let i = 0; i < stop.time; i++) {
         updateConstantDepth(st, stop.depth, gas, 1);
@@ -270,6 +323,11 @@ let profileChart = null;
         const gf = gfAtDepth(stop.depth, gfL/100, gfH/100, firstStop);
         const c = overallCeiling(st, gf);
         ceilPts.push({ x: t, y: c });
+        
+        // Calcul de la saturation
+        const sat = getMaxSaturation(st, stop.depth, gf);
+        saturationData.push({ x: t, y: sat });
+        if (sat > maxSaturation) maxSaturation = sat;
       }
       
       // Remontée vers le prochain palier ou la surface
@@ -278,6 +336,7 @@ let profileChart = null;
       
       if (cur > nextStop) {
         let mins = Math.ceil((cur - nextStop) / ASCENT_RATE);
+        annotationData.push({ phase: 'remontée', start: t, end: t + mins });
         for (let i = 0; i < mins; i++) {
           const next = Math.max(cur - ASCENT_RATE, nextStop);
           updateConstantDepth(st, next, gas, 1);
@@ -287,6 +346,11 @@ let profileChart = null;
           const gf = gfAtDepth(cur, gfL/100, gfH/100, firstStop);
           const c = overallCeiling(st, gf);
           ceilPts.push({ x: t, y: c });
+          
+          // Calcul de la saturation
+          const sat = getMaxSaturation(st, cur, gf);
+          saturationData.push({ x: t, y: sat });
+          if (sat > maxSaturation) maxSaturation = sat;
         }
       }
     }
@@ -294,6 +358,7 @@ let profileChart = null;
     // Si pas de paliers, remontée directe
     if (plan.stops.length === 0 && cur > 0) {
       let mins = Math.ceil(cur / ASCENT_RATE);
+      annotationData.push({ phase: 'remontée', start: t, end: t + mins });
       for (let i = 0; i < mins; i++) {
         const next = Math.max(cur - ASCENT_RATE, 0);
         updateConstantDepth(st, next, gas, 1);
@@ -303,7 +368,22 @@ let profileChart = null;
         const gf = gfAtDepth(cur, gfL/100, gfH/100, firstStop);
         const c = overallCeiling(st, gf);
         ceilPts.push({ x: t, y: c });
+        
+        // Calcul de la saturation
+        const sat = getMaxSaturation(st, cur, gf);
+        saturationData.push({ x: t, y: sat });
+        if (sat > maxSaturation) maxSaturation = sat;
       }
+    }
+    
+    // Zone de gradient factor high
+    if (firstStop > 0) {
+      gfZones.push({
+        type: 'gfHigh',
+        start: t - 1,
+        depth: 0,
+        label: `GF High (${gfH}%)`
+      });
     }
 
     // Afficher le conteneur du graphique
@@ -321,27 +401,71 @@ let profileChart = null;
           {
             label: 'Profil de plongée',
             data: points,
-            borderColor: '#0066cc',
-            backgroundColor: 'rgba(0, 102, 204, 0.1)',
+            borderColor: 'rgba(0, 102, 204, 1)',
+            backgroundColor: (context) => {
+              const ctx = context.chart.ctx;
+              const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+              gradient.addColorStop(0, 'rgba(0, 102, 204, 0.3)');
+              gradient.addColorStop(0.5, 'rgba(0, 102, 204, 0.2)');
+              gradient.addColorStop(1, 'rgba(0, 102, 204, 0.05)');
+              return gradient;
+            },
             borderWidth: 3,
-            stepped: 'before', // Ligne en escaliers
+            stepped: 'before',
             tension: 0,
-            pointRadius: 4,
-            pointHoverRadius: 6,
+            pointRadius: (context) => {
+              const index = context.dataIndex;
+              const value = context.dataset.data[index];
+              // Points plus grands aux changements de phase
+              for (const ann of annotationData) {
+                if (value.x === ann.start || value.x === ann.end) {
+                  return 6;
+                }
+              }
+              return 2;
+            },
+            pointHoverRadius: 8,
             pointBackgroundColor: '#fff',
-            pointBorderColor: '#0066cc',
+            pointBorderColor: (context) => {
+              const index = context.dataIndex;
+              const value = context.dataset.data[index];
+              // Couleur différente pour les paliers
+              for (const ann of annotationData) {
+                if (ann.phase === 'palier' && value.x >= ann.start && value.x <= ann.end) {
+                  return '#00c896';
+                }
+              }
+              return '#0066cc';
+            },
             pointBorderWidth: 2,
             fill: true,
+            order: 2
           },
           {
-            label: 'Plafond (GF)',
+            label: 'Plafond de décompression',
             data: ceilPts,
-            borderColor: '#ff4757',
-            borderDash: [6, 4],
-            borderWidth: 2,
+            borderColor: 'rgba(255, 71, 87, 0.9)',
+            backgroundColor: 'rgba(255, 71, 87, 0.1)',
+            borderDash: [8, 4],
+            borderWidth: 2.5,
             pointRadius: 0,
-            pointHoverRadius: 0,
+            pointHoverRadius: 5,
+            fill: '+2',
+            order: 1
+          },
+          {
+            label: 'Saturation tissulaire (%)',
+            data: saturationData,
+            borderColor: 'rgba(255, 165, 2, 0.8)',
+            backgroundColor: 'rgba(255, 165, 2, 0.1)',
+            borderWidth: 2,
+            borderDash: [3, 3],
+            pointRadius: 0,
+            pointHoverRadius: 4,
             fill: false,
+            yAxisID: 'y2',
+            order: 3,
+            hidden: false
           }
         ],
       },
@@ -361,50 +485,176 @@ let profileChart = null;
               padding: 20,
               font: {
                 size: 12
+              },
+              generateLabels: function(chart) {
+                const original = Chart.defaults.plugins.legend.labels.generateLabels;
+                const labels = original.call(this, chart);
+                
+                // Ajouter des infos supplémentaires aux labels
+                labels.forEach(label => {
+                  if (label.text === 'Saturation tissulaire (%)') {
+                    label.text = `Saturation tissulaire (Max: ${Math.round(maxSaturation)}%)`;
+                  }
+                });
+                
+                return labels;
               }
             }
           },
           tooltip: {
-            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            backgroundColor: 'rgba(0, 0, 0, 0.9)',
             titleColor: '#fff',
             bodyColor: '#fff',
-            padding: 12,
+            padding: 15,
             displayColors: true,
+            borderColor: 'rgba(255, 255, 255, 0.2)',
+            borderWidth: 1,
+            cornerRadius: 8,
             callbacks: {
               title: function(tooltipItems) {
                 const item = tooltipItems[0];
-                return `Temps: ${Math.round(item.parsed.x * 10) / 10} min`;
+                const time = Math.round(item.parsed.x * 10) / 10;
+                
+                // Identifier la phase
+                let phase = '';
+                for (const ann of annotationData) {
+                  if (time >= ann.start && time <= ann.end) {
+                    phase = ann.phase.charAt(0).toUpperCase() + ann.phase.slice(1);
+                    if (ann.depth) phase += ` à ${ann.depth}m`;
+                    break;
+                  }
+                }
+                
+                return [`Temps: ${time} min`, phase ? `Phase: ${phase}` : ''];
               },
               label: function(context) {
                 const label = context.dataset.label;
-                const value = Math.round(context.parsed.y);
-                return `${label}: ${value} m`;
+                const value = context.parsed.y;
+                
+                if (label.includes('Saturation')) {
+                  const satValue = Math.round(value);
+                  let color = '#00c896';
+                  if (satValue > 100) color = '#ff4757';
+                  else if (satValue > 90) color = '#ffa502';
+                  return `${label}: ${satValue}%`;
+                } else if (label.includes('Plafond')) {
+                  return `${label}: ${Math.round(value)} m`;
+                } else {
+                  return `${label}: ${Math.round(value)} m`;
+                }
+              },
+              afterBody: function(tooltipItems) {
+                const item = tooltipItems[0];
+                const time = item.parsed.x;
+                
+                // Ajouter le GF actuel si on est en décompression
+                if (plan.firstStopDepth > 0 && time > bottomStart + bottomMin) {
+                  const currentDepth = item.parsed.y;
+                  const gf = gfAtDepth(currentDepth, gfL/100, gfH/100, plan.firstStopDepth);
+                  return [``, `Gradient Factor: ${Math.round(gf * 100)}%`];
+                }
+                return [];
               }
             }
           },
-          annotation: plan.firstStopDepth > 0 ? {
-            annotations: {
-              firstStop: {
-                type: 'line',
-                yMin: plan.firstStopDepth,
-                yMax: plan.firstStopDepth,
-                borderColor: 'rgba(100, 100, 100, 0.3)',
-                borderWidth: 2,
-                borderDash: [10, 5],
-                label: {
-                  content: `Premier palier: ${plan.firstStopDepth} m`,
-                  display: true,
-                  position: 'end',
-                  backgroundColor: 'rgba(100, 100, 100, 0.8)',
-                  color: 'white',
-                  padding: 4,
-                  font: {
-                    size: 11
+          annotation: {
+            annotations: (() => {
+              const annotations = {};
+              
+              // Ligne du premier palier
+              if (plan.firstStopDepth > 0) {
+                annotations.firstStop = {
+                  type: 'line',
+                  yMin: plan.firstStopDepth,
+                  yMax: plan.firstStopDepth,
+                  borderColor: 'rgba(100, 100, 100, 0.3)',
+                  borderWidth: 2,
+                  borderDash: [10, 5],
+                  label: {
+                    content: `Premier palier: ${plan.firstStopDepth} m (GF Low ${gfL}%)`,
+                    display: true,
+                    position: 'end',
+                    backgroundColor: 'rgba(100, 100, 100, 0.8)',
+                    color: 'white',
+                    padding: 6,
+                    font: {
+                      size: 11
+                    }
                   }
+                };
+              }
+              
+              // Zones de phases (descente, fond, remontée, paliers)
+              let zoneCount = 0;
+              for (const ann of annotationData) {
+                if (ann.phase === 'fond') {
+                  annotations[`zone_${zoneCount++}`] = {
+                    type: 'box',
+                    xMin: ann.start,
+                    xMax: ann.end,
+                    backgroundColor: 'rgba(0, 102, 204, 0.05)',
+                    borderColor: 'transparent',
+                    label: {
+                      content: 'Temps fond',
+                      display: true,
+                      position: 'center',
+                      color: 'rgba(0, 102, 204, 0.6)',
+                      font: {
+                        size: 10,
+                        weight: 'bold'
+                      }
+                    }
+                  };
+                } else if (ann.phase === 'palier') {
+                  annotations[`stop_${zoneCount++}`] = {
+                    type: 'box',
+                    xMin: ann.start,
+                    xMax: ann.end,
+                    yMin: ann.depth - 0.5,
+                    yMax: ann.depth + 0.5,
+                    backgroundColor: 'rgba(0, 200, 150, 0.1)',
+                    borderColor: 'rgba(0, 200, 150, 0.3)',
+                    borderWidth: 1,
+                    borderRadius: 4
+                  };
                 }
               }
-            }
-          } : {}
+              
+              // Zone de sécurité (saturation > 90%)
+              annotations.safetyZone = {
+                type: 'line',
+                yScaleID: 'y2',
+                yMin: 90,
+                yMax: 90,
+                borderColor: 'rgba(255, 165, 2, 0.3)',
+                borderWidth: 1,
+                borderDash: [5, 5],
+                label: {
+                  content: 'Limite de saturation 90%',
+                  display: true,
+                  position: 'start',
+                  backgroundColor: 'rgba(255, 165, 2, 0.7)',
+                  color: 'white',
+                  padding: 3,
+                  font: {
+                    size: 10
+                  }
+                }
+              };
+              
+              // Zone critique (saturation > 100%)
+              annotations.criticalZone = {
+                type: 'box',
+                yScaleID: 'y2',
+                yMin: 100,
+                yMax: maxSaturation + 10,
+                backgroundColor: 'rgba(255, 71, 87, 0.05)',
+                borderColor: 'transparent'
+              };
+              
+              return annotations;
+            })()
+          }
         },
         scales: {
           x: {
@@ -427,38 +677,83 @@ let profileChart = null;
               color: '#666',
               font: {
                 size: 12
-              }
+              },
+              maxTicksLimit: 15
             }
           },
           y: {
             type: 'linear',
             position: 'left',
-            reverse: true, // inverse l'axe pour avoir 0 en haut
-            min: 0, // Force le minimum à 0
+            reverse: true,
+            min: 0,
             title: {
               display: true,
               text: 'Profondeur (m)',
-              color: '#666',
+              color: '#0066cc',
               font: {
                 size: 14,
                 weight: 'bold'
               }
             },
             grid: {
-              color: 'rgba(0, 0, 0, 0.05)',
-              drawBorder: false
+              color: (context) => {
+                // Lignes plus visibles pour les paliers standards
+                if (context.tick.value % 3 === 0) {
+                  return 'rgba(0, 0, 0, 0.08)';
+                }
+                return 'rgba(0, 0, 0, 0.03)';
+              },
+              drawBorder: false,
+              lineWidth: (context) => {
+                // Lignes plus épaisses pour les paliers standards
+                if (context.tick.value % 3 === 0) {
+                  return 1.5;
+                }
+                return 0.5;
+              }
             },
             ticks: {
-              stepSize: 3, // Graduations tous les 3 m
+              stepSize: 3,
               color: '#666',
               font: {
                 size: 12
               },
               callback: function(value) {
+                // Mettre en évidence les profondeurs de palier
+                if (value % 3 === 0 && value > 0 && value <= 21) {
+                  return `${value} m`;
+                }
                 return value + ' m';
               }
             },
-            suggestedMax: Math.ceil(depthM / 3) * 3 + 3, // Arrondi au multiple de 3 supérieur
+            suggestedMax: Math.ceil(depthM / 3) * 3 + 3,
+          },
+          y2: {
+            type: 'linear',
+            position: 'right',
+            min: 0,
+            max: Math.max(120, maxSaturation + 10),
+            title: {
+              display: true,
+              text: 'Saturation (%)',
+              color: '#ffa502',
+              font: {
+                size: 14,
+                weight: 'bold'
+              }
+            },
+            grid: {
+              display: false
+            },
+            ticks: {
+              color: '#ffa502',
+              font: {
+                size: 11
+              },
+              callback: function(value) {
+                return value + '%';
+              }
+            }
           }
         }
       }
