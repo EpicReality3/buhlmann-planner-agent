@@ -6,6 +6,8 @@
 // - Bouton Self-Test pour valider les cas de référence
 // - Graphique du profil avec Chart.js
 
+let profileChart = null;
+
 (function () {
   'use strict';
 
@@ -143,7 +145,6 @@
   }
 
   // ----- Graphique du profil -----
-  let profileChart = null;
 
   function generateProfileData(depth, tbt, stops) {
     const data = [];
