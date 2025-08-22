@@ -95,8 +95,11 @@ let profileChart = null;
     const minLast = Math.max(0, Math.floor(opts?.minLastStopMinutes ?? 0));
 
     const st = initTissues();
-    let tts = 0;
+    let decoTime = 0;  // Temps de décompression seulement
     let cur = 0;
+    
+    // Calcul temps de descente
+    const descentTime = Math.ceil(depthM / DESCENT_RATE);
 
     // Descente (simulation minute par minute pour cohérence tissulaire)
     if (depthM > 0) {
@@ -104,14 +107,14 @@ let profileChart = null;
       for (let i = 0; i < mins; i++) {
         const next = Math.min(depthM, cur + DESCENT_RATE);
         updateConstantDepth(st, next, gas, 1);
-        cur = next; tts++;
+        cur = next;
       }
     }
 
     // Fond
     if (bottomMin > 0) {
       updateConstantDepth(st, depthM, gas, bottomMin);
-      cur = depthM; tts += bottomMin;
+      cur = depthM;
     }
 
     // Premier plafond avec GF bas
@@ -124,7 +127,7 @@ let profileChart = null;
       for (let i = 0; i < mins; i++) {
         const next = Math.max(firstStop, cur - ASCENT_RATE);
         updateConstantDepth(st, next, gas, 1);
-        cur = next; tts++;
+        cur = next; decoTime++;
       }
     }
 
@@ -143,7 +146,7 @@ let profileChart = null;
         if (canLeave) break;
 
         updateConstantDepth(st, stopDepth, gas, 1);
-        held++; tts++;
+        held++; decoTime++;
         // garde-fou
         if (held > 360) break;
       }
@@ -159,7 +162,7 @@ let profileChart = null;
         for (let i = 0; i < mins; i++) {
           const d = Math.max(nextDepth, cur - ASCENT_RATE);
           updateConstantDepth(st, d, gas, 1);
-          cur = d; tts++;
+          cur = d; decoTime++;
         }
       }
       stopDepth = nextDepth;
@@ -174,15 +177,21 @@ let profileChart = null;
       for (let i = 0; i < mins; i++) {
         const d = Math.max(0, cur - ASCENT_RATE);
         updateConstantDepth(st, d, gas, 1);
-        cur = d; tts++;
+        cur = d; decoTime++;
       }
     }
+
+    // Calculs finaux des temps
+    const totalDiveTime = descentTime + bottomMin + decoTime;
 
     // Arrondi d'affichage (contrat = minute)
     return {
       firstStopDepth: firstStop,
       stops,
-      tts: Math.round(tts), // affichage entier
+      tts: Math.round(decoTime),           // TTS = temps de déco seulement
+      totalDiveTime: Math.round(totalDiveTime), // Temps total de plongée
+      descentTime: Math.round(descentTime),     // Temps de descente
+      bottomTime: bottomMin,                    // Temps de fond (déjà en minutes)
     };
   }
 
@@ -513,8 +522,13 @@ let profileChart = null;
             ${isValid ? '<span class="validation-badge valid">✅ Validé</span>' : '<span class="validation-badge invalid">❌ À vérifier</span>'}
           </h3>
           <div class="tts-display">
-            <div class="tts-value">${Math.round(plan.tts)}</div>
+            <div class="tts-value">${Math.round(plan.totalDiveTime)}</div>
             <div class="tts-label">minutes</div>
+          </div>
+          <div style="font-size: 0.9rem; color: #666; margin-top: 10px;">
+            <strong>TTS (décompression):</strong> ${plan.tts} min | 
+            <strong>Descente:</strong> ${plan.descentTime} min | 
+            <strong>Fond:</strong> ${plan.bottomTime} min
           </div>
           ${plan.stops.length === 0 ? 
             '<div class="no-stops"><i class="fas fa-check-circle"></i>Aucun palier obligatoire</div>' : 

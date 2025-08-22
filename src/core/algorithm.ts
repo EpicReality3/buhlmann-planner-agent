@@ -1,17 +1,17 @@
-import { A_HE, A_N2, B_HE, B_N2, HALF_TIMES_N2, HALF_TIMES_HE } from './constants';
+import { A_HE, A_N2, B_HE, B_N2, HALF_TIMES_N2, HALF_TIMES_HE, 
+         SURFACE_PRESSURE, PRESSURE_PER_METER } from './constants';
 import { GasMix, TissueState, DecompressionStop, DecompressionPlan, MultiGasPlan } from './models';
 import { depthToPressure, computePinsp, initTissues, updateConstantDepth } from './utils';
 import { calculateOxygenToxicity } from './oxygen-toxicity';
 import { getBestGasForDepth, validateMultiGasPlan } from './multi-gas';
 
-// --- constantes & helpers ---
-import { SURFACE_PRESSURE, WATER_VAPOUR_PRESSURE, PRESSURE_PER_METER } from './constants';
-
-const STOP_STEP = 3;     // paliers multiples de 3 m
-const ASCENT_RATE = 9;   // m/min (remontée)
-const DESCENT_RATE = 19; // m/min (descente)
-
-// Fonctions supprimées - utilisation de celles dans utils.ts
+/**
+ * Constantes de décompression
+ * Référence: Tables de plongée standard et pratiques de la communauté technique
+ */
+const STOP_STEP = 3;     // Paliers multiples de 3 m (standard industrie)
+const ASCENT_RATE = 9;   // m/min (remontée - recommandation PADI/SSI)
+const DESCENT_RATE = 19; // m/min (descente - valeur conservatrice)
 
 /**
  * Calcule le plafond pour un compartiment tissulaire donné
@@ -65,7 +65,7 @@ export function planDecompression(
 ): DecompressionPlan {
   const lastStopDepth = Math.max(0, (opts?.lastStopDepth ?? 3));
   const minLast = Math.max(0, Math.floor(opts?.minLastStopMinutes ?? 0));
-  const timeStep = opts?.timeStepMinutes ?? 1.0;  // Par défaut 1 minute
+  const timeStep = opts?.timeStepMinutes ?? 0.5;  // Par défaut 30 secondes pour meilleure précision
   const calculateO2 = opts?.calculateO2Toxicity ?? false;
 
   const st = initTissues();
@@ -146,7 +146,9 @@ export function planDecompression(
     }
 
     if (held > 0) {
-      stops.push({ depth: stopDepth, time: held, gf: gfAtDepth(stopDepth, gfLow, gfHigh, firstStop) });
+      // Arrondir le temps de palier à la minute la plus proche pour l'affichage
+      const roundedTime = Math.round(held);
+      stops.push({ depth: stopDepth, time: roundedTime, gf: gfAtDepth(stopDepth, gfLow, gfHigh, firstStop) });
       
       // Enregistrer segment de palier pour toxicité O₂
       if (calculateO2) {
@@ -237,7 +239,7 @@ export function planDecompressionMultiGas(
 ): DecompressionPlan {
   const lastStopDepth = Math.max(0, (opts?.lastStopDepth ?? 3));
   const minLast = Math.max(0, Math.floor(opts?.minLastStopMinutes ?? 0));
-  const timeStep = opts?.timeStepMinutes ?? 1.0;
+  const timeStep = opts?.timeStepMinutes ?? 0.5;  // Par défaut 30 secondes pour meilleure précision
   const calculateO2 = opts?.calculateO2Toxicity ?? true;  // Activé par défaut pour multi-gaz
   const maxPO2 = opts?.maxPO2 ?? 1.6;
 
@@ -342,9 +344,11 @@ export function planDecompressionMultiGas(
     }
 
     if (held > 0) {
+      // Arrondir le temps de palier à la minute la plus proche pour l'affichage
+      const roundedTime = Math.round(held);
       stops.push({ 
         depth: stopDepth, 
-        time: held, 
+        time: roundedTime, 
         gf: gfAtDepth(stopDepth, gfLow, gfHigh, firstStop),
         gas: currentGas,
         gasName: gasChoice.name

@@ -11,7 +11,12 @@ export function normaliseGradientFactors(gfLowPct:number,gfHighPct:number){ retu
 export function planDive(
   depthM:number, bottomMin:number, gasIn:GasMix,
   gfLowPct:number, gfHighPct:number,
-  opts?:{ lastStopDepth?:3|6; minLastStopMinutes?:number }
+  opts?:{ 
+    lastStopDepth?:3|6; 
+    minLastStopMinutes?:number;
+    timeStepMinutes?: number;
+    calculateO2Toxicity?: boolean;
+  }
 ):DecompressionPlan{
   const gas = normaliseGas(gasIn);
   const { gfLow, gfHigh } = normaliseGradientFactors(gfLowPct,gfHighPct);
