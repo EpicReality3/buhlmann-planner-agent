@@ -1,31 +1,526 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8" />
-<title>Planificateur Bühlmann ZH-L16C + GF</title>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<style>body{font:14px system-ui,sans-serif;max-width:980px;margin:24px auto}
-.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0}
-label{display:inline-flex;align-items:center;gap:6px}
-input[type=number]{width:90px;padding:4px}button{padding:8px 12px;cursor:pointer}
-table{border-collapse:collapse;margin-top:12px}th,td{border:1px solid #ddd;padding:6px 8px}
-.muted{color:#666}</style>
-<!-- importer Chart.js depuis un CDN -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<!-- v1.1 - Graphique amélioré avec descente réaliste -->
-</head><body>
-<h1>Planificateur Bühlmann ZH-L16C + GF</h1>
-<div class="row">
-  <label>Profondeur (m)<input id="depth" type="number" value="40"></label>
-  <label>Temps fond (min)<input id="tbt" type="number" value="10"></label>
-  <label>FO₂ (%)<input id="fo2" type="number" value="21"></label>
-  <label>FHe (%)<input id="fhe" type="number" value="0"></label>
-</div>
-<div class="row">
-  <label>GF bas<input id="gfl" type="number" value="85"></label>
-  <label>GF haut<input id="gfh" type="number" value="85"></label>
-  <label><input id="last6" type="checkbox"> Dernier palier à 6 m</label>
-  <label>Min dernier palier (min)<input id="minLast" type="number" value="1" min="0"></label>
-  <button id="go">Calculer</button><button id="selftest">Self-Test</button>
-</div>
-<div id="out" class="muted">Entrez vos paramètres puis cliquez sur « Calculer ».</div>
-<!-- zone où sera tracé le profil -->
-<canvas id="profileChart" width="800" height="400" style="margin-top:16px"></canvas>
-<script src="./app.js"></script></body></html>
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <title>Planificateur de Décompression Bühlmann ZH-L16C</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Calculateur de paliers de décompression avec l'algorithme Bühlmann ZH-L16C et Gradient Factors">
+    
+    <!-- Font Awesome pour les icônes -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    
+    <style>
+        :root {
+            --primary: #0066cc;
+            --primary-dark: #0052a3;
+            --primary-light: #e6f0ff;
+            --secondary: #00a8e6;
+            --success: #00c896;
+            --danger: #ff4757;
+            --warning: #ffa502;
+            --dark: #2c3e50;
+            --light: #f8f9fa;
+            --border: #e1e8ed;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: var(--dark);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: var(--shadow-lg);
+            overflow: hidden;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: pulse 4s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.5; }
+            50% { transform: scale(1.1); opacity: 0.3; }
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Main content */
+        .content {
+            padding: 40px;
+        }
+
+        /* Input sections */
+        .input-section {
+            background: var(--light);
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 30px;
+            border: 1px solid var(--border);
+            transition: all 0.3s ease;
+        }
+
+        .input-section:hover {
+            box-shadow: var(--shadow);
+            transform: translateY(-2px);
+        }
+
+        .section-title {
+            font-size: 1.3rem;
+            color: var(--primary);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-title i {
+            font-size: 1.5rem;
+        }
+
+        .input-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        label {
+            font-weight: 600;
+            color: var(--dark);
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        label i {
+            color: var(--primary);
+            font-size: 1rem;
+        }
+
+        input[type="number"] {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 0;
+        }
+
+        input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .checkbox-group label {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        /* Buttons */
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 14px 28px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        button i {
+            font-size: 1.1rem;
+        }
+
+        #go {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(0, 102, 204, 0.3);
+        }
+
+        #go:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 102, 204, 0.4);
+        }
+
+        #selftest {
+            background: linear-gradient(135deg, var(--success) 0%, #00a87a 100%);
+            color: white;
+        }
+
+        #selftest:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 200, 150, 0.4);
+        }
+
+        /* Results section */
+        .results-section {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 30px;
+            margin-top: 30px;
+        }
+
+        @media (max-width: 768px) {
+            .results-section {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .results-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+        }
+
+        .results-card h3 {
+            color: var(--primary);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .results-card h3 i {
+            font-size: 1.3rem;
+        }
+
+        /* Table styles */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        thead {
+            background: var(--primary-light);
+        }
+
+        th {
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--primary);
+            border-bottom: 2px solid var(--primary);
+        }
+
+        td {
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tbody tr:hover {
+            background: var(--light);
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* TTS display */
+        .tts-display {
+            background: linear-gradient(135deg, var(--primary-light) 0%, rgba(0, 168, 230, 0.1) 100%);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .tts-value {
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin: 10px 0;
+        }
+
+        .tts-label {
+            color: var(--dark);
+            font-size: 1.1rem;
+        }
+
+        /* Chart container */
+        .chart-container {
+            position: relative;
+            height: 400px;
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+        }
+
+        canvas {
+            max-height: 100%;
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        /* Info messages */
+        .info-message {
+            background: var(--primary-light);
+            color: var(--primary);
+            padding: 12px 20px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .info-message i {
+            font-size: 1.2rem;
+        }
+
+        /* No stops message */
+        .no-stops {
+            text-align: center;
+            padding: 40px;
+            color: var(--success);
+            font-size: 1.1rem;
+        }
+
+        .no-stops i {
+            font-size: 3rem;
+            display: block;
+            margin-bottom: 15px;
+        }
+
+        /* Loading spinner */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header {
+                padding: 30px 20px;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+            
+            .input-section {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-water"></i> Planificateur Bühlmann ZH-L16C</h1>
+            <p class="subtitle">Calculateur de paliers de décompression avec Gradient Factors</p>
+        </div>
+
+        <div class="content">
+            <!-- Paramètres de plongée -->
+            <div class="input-section fade-in">
+                <h2 class="section-title">
+                    <i class="fas fa-cog"></i>
+                    Paramètres de plongée
+                </h2>
+                <div class="input-grid">
+                    <div class="input-group">
+                        <label for="depth">
+                            <i class="fas fa-arrow-down"></i>
+                            Profondeur (m)
+                        </label>
+                        <input id="depth" type="number" value="40" min="0" max="200">
+                    </div>
+                    <div class="input-group">
+                        <label for="tbt">
+                            <i class="fas fa-clock"></i>
+                            Temps fond (min)
+                        </label>
+                        <input id="tbt" type="number" value="10" min="0" max="999">
+                    </div>
+                    <div class="input-group">
+                        <label for="fo2">
+                            <i class="fas fa-percentage"></i>
+                            FO₂ (%)
+                        </label>
+                        <input id="fo2" type="number" value="21" min="0" max="100" step="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="fhe">
+                            <i class="fas fa-atom"></i>
+                            FHe (%)
+                        </label>
+                        <input id="fhe" type="number" value="0" min="0" max="100" step="1">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Paramètres de décompression -->
+            <div class="input-section fade-in">
+                <h2 class="section-title">
+                    <i class="fas fa-chart-line"></i>
+                    Paramètres de décompression
+                </h2>
+                <div class="input-grid">
+                    <div class="input-group">
+                        <label for="gfl">
+                            <i class="fas fa-level-down-alt"></i>
+                            Gradient Factor bas (%)
+                        </label>
+                        <input id="gfl" type="number" value="85" min="0" max="100">
+                    </div>
+                    <div class="input-group">
+                        <label for="gfh">
+                            <i class="fas fa-level-up-alt"></i>
+                            Gradient Factor haut (%)
+                        </label>
+                        <input id="gfh" type="number" value="85" min="0" max="100">
+                    </div>
+                    <div class="input-group">
+                        <label for="minLast">
+                            <i class="fas fa-stopwatch"></i>
+                            Min dernier palier (min)
+                        </label>
+                        <input id="minLast" type="number" value="1" min="0" max="99">
+                    </div>
+                    <div class="checkbox-group">
+                        <input id="last6" type="checkbox">
+                        <label for="last6">
+                            <i class="fas fa-ruler-vertical"></i>
+                            Dernier palier à 6m (sinon 3m)
+                        </label>
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button id="go">
+                        <i class="fas fa-calculator"></i>
+                        Calculer
+                    </button>
+                    <button id="selftest">
+                        <i class="fas fa-check-circle"></i>
+                        Self-Test
+                    </button>
+                </div>
+            </div>
+
+            <!-- Résultats -->
+            <div id="out" class="fade-in"></div>
+
+            <!-- Graphique -->
+            <div class="chart-container fade-in" style="display: none;" id="chartContainer">
+                <h3 style="color: var(--primary); margin-bottom: 20px;">
+                    <i class="fas fa-chart-area"></i>
+                    Profil de plongée
+                </h3>
+                <canvas id="profileChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script src="./app.js"></script>
+</body>
+</html>
