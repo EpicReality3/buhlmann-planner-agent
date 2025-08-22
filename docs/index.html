@@ -40,6 +40,28 @@
             min-height: 100vh;
             padding: 20px;
             color: var(--dark);
+            position: relative;
+            overflow-x: hidden;
+        }
+        
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 20% 50%, rgba(120, 119, 198, 0.3), transparent 50%),
+                        radial-gradient(circle at 80% 80%, rgba(255, 119, 198, 0.2), transparent 50%),
+                        radial-gradient(circle at 40% 20%, rgba(100, 200, 255, 0.2), transparent 50%);
+            animation: float 20s ease-in-out infinite;
+            z-index: -1;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: rotate(0deg) scale(1); }
+            33% { transform: rotate(120deg) scale(1.1); }
+            66% { transform: rotate(240deg) scale(0.95); }
         }
 
         .container {
@@ -98,17 +120,37 @@
 
         /* Input sections */
         .input-section {
-            background: var(--light);
-            border-radius: 12px;
-            padding: 25px;
+            background: rgba(248, 249, 250, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 30px;
             margin-bottom: 30px;
-            border: 1px solid var(--border);
-            transition: all 0.3s ease;
+            border: 1px solid rgba(225, 232, 237, 0.5);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .input-section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            transform: scaleX(0);
+            transition: transform 0.4s ease;
         }
 
         .input-section:hover {
-            box-shadow: var(--shadow);
-            transform: translateY(-2px);
+            box-shadow: 0 10px 40px rgba(0, 102, 204, 0.15);
+            transform: translateY(-3px);
+            border-color: rgba(0, 102, 204, 0.3);
+        }
+        
+        .input-section:hover::before {
+            transform: scaleX(1);
         }
 
         .section-title {
@@ -152,18 +194,25 @@
 
         input[type="number"] {
             width: 100%;
-            padding: 12px 16px;
+            padding: 14px 18px;
             border: 2px solid var(--border);
-            border-radius: 8px;
+            border-radius: 10px;
             font-size: 1rem;
-            transition: all 0.3s ease;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             background: white;
+            font-weight: 500;
         }
 
         input[type="number"]:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+            box-shadow: 0 0 0 4px rgba(0, 102, 204, 0.1),
+                        0 4px 12px rgba(0, 102, 204, 0.1);
+            transform: translateY(-1px);
+        }
+        
+        input[type="number"]:hover:not(:focus) {
+            border-color: rgba(0, 102, 204, 0.4);
         }
 
         .checkbox-group {
@@ -193,16 +242,36 @@
         }
 
         button {
-            padding: 14px 28px;
+            padding: 16px 32px;
             border: none;
-            border-radius: 8px;
-            font-size: 1rem;
+            border-radius: 12px;
+            font-size: 1.05rem;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        button::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+        
+        button:active::before {
+            width: 300px;
+            height: 300px;
         }
 
         button i {
@@ -212,12 +281,18 @@
         #go {
             background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
             color: white;
-            box-shadow: 0 4px 15px rgba(0, 102, 204, 0.3);
+            box-shadow: 0 4px 20px rgba(0, 102, 204, 0.3);
+            animation: pulse-shadow 2s infinite;
         }
 
         #go:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 102, 204, 0.4);
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 8px 25px rgba(0, 102, 204, 0.4);
+        }
+        
+        @keyframes pulse-shadow {
+            0%, 100% { box-shadow: 0 4px 20px rgba(0, 102, 204, 0.3); }
+            50% { box-shadow: 0 4px 25px rgba(0, 102, 204, 0.5); }
         }
 
         #selftest {
@@ -245,11 +320,30 @@
         }
 
         .results-card {
-            background: white;
-            border-radius: 12px;
-            padding: 25px;
-            box-shadow: var(--shadow);
-            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(225, 232, 237, 0.5);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            animation: slideInUp 0.6s ease-out;
+        }
+        
+        @keyframes slideInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .results-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.1);
         }
 
         .results-card h3 {
@@ -309,8 +403,13 @@
             border-bottom: 1px solid var(--border);
         }
 
+        tbody tr {
+            transition: all 0.3s ease;
+        }
+        
         tbody tr:hover {
-            background: var(--light);
+            background: linear-gradient(90deg, rgba(0, 102, 204, 0.05) 0%, rgba(0, 168, 230, 0.05) 100%);
+            transform: scale(1.01);
         }
 
         tbody tr:last-child td {
@@ -320,17 +419,49 @@
         /* TTS display */
         .tts-display {
             background: linear-gradient(135deg, var(--primary-light) 0%, rgba(0, 168, 230, 0.1) 100%);
-            border-radius: 12px;
-            padding: 20px;
+            border-radius: 16px;
+            padding: 25px;
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 25px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .tts-display::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            animation: shimmer 3s infinite;
+        }
+        
+        @keyframes shimmer {
+            0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
+            100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
         }
 
         .tts-value {
-            font-size: 3rem;
+            font-size: 3.5rem;
             font-weight: 700;
             color: var(--primary);
-            margin: 10px 0;
+            margin: 15px 0;
+            position: relative;
+            z-index: 1;
+            animation: countUp 0.6s ease-out;
+        }
+        
+        @keyframes countUp {
+            from {
+                opacity: 0;
+                transform: scale(0.5);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
         }
 
         .tts-label {
@@ -341,12 +472,15 @@
         /* Chart container */
         .chart-container {
             position: relative;
-            height: 450px;
-            padding: 20px;
-            background: white;
-            border-radius: 12px;
-            box-shadow: var(--shadow);
+            height: 500px;
+            padding: 30px;
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
             margin-top: 30px;
+            border: 1px solid rgba(225, 232, 237, 0.3);
+            animation: fadeIn 0.8s ease-out;
         }
 
         canvas {
@@ -400,6 +534,49 @@
         }
 
         /* Loading spinner */
+        /* Runtime display */
+        .runtime-display {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 15px 25px;
+            border-radius: 50px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            display: none;
+            animation: slideInRight 0.5s ease-out;
+        }
+        
+        .runtime-display.active {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .runtime-display i {
+            color: var(--primary);
+            font-size: 1.2rem;
+        }
+        
+        .runtime-display .runtime-value {
+            font-weight: 600;
+            color: var(--dark);
+            font-size: 1.1rem;
+        }
+        
+        @keyframes slideInRight {
+            from {
+                opacity: 0;
+                transform: translateX(50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        
         .loading {
             display: inline-block;
             width: 20px;
@@ -440,6 +617,12 @@
     </style>
 </head>
 <body>
+    <!-- Runtime display -->
+    <div class="runtime-display" id="runtimeDisplay">
+        <i class="fas fa-clock"></i>
+        <span class="runtime-value" id="runtimeValue">Runtime: 0 min</span>
+    </div>
+    
     <div class="container">
         <div class="header">
             <h1><i class="fas fa-water"></i> Planificateur Bühlmann ZH-L16C</h1>
@@ -459,7 +642,7 @@
                             <i class="fas fa-arrow-down"></i>
                             Profondeur (m)
                         </label>
-                        <input id="depth" type="number" value="40" min="0" max="200">
+                        <input id="depth" type="number" value="40" min="0" max="200" step="1">
                     </div>
                     <div class="input-group">
                         <label for="tbt">
@@ -497,14 +680,14 @@
                             <i class="fas fa-level-down-alt"></i>
                             Gradient Factor bas (%)
                         </label>
-                        <input id="gfl" type="number" value="85" min="1" max="99">
+                        <input id="gfl" type="number" value="85" min="1" max="99" step="5">
                     </div>
                     <div class="input-group">
                         <label for="gfh">
                             <i class="fas fa-level-up-alt"></i>
                             Gradient Factor haut (%)
                         </label>
-                        <input id="gfh" type="number" value="85" min="1" max="99">
+                        <input id="gfh" type="number" value="85" min="1" max="99" step="5">
                     </div>
                     <div class="input-group">
                         <label for="minLast">

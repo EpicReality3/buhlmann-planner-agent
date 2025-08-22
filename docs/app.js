@@ -195,39 +195,23 @@ let profileChart = null;
     };
   }
 
-  // ----- Graphique du profil avec plafond et saturation tissulaire -----
+  // ----- Graphique du profil avec plafond -----
   function updateProfileChartWithCeiling(depthM, bottomMin, gas, gfL, gfH, opts, plan) {
     const points = [];
     const ceilPts = [];
-    const saturationData = [];
     const gfZones = [];
     const annotationData = [];
+    const runtimePoints = [];
     
     // Re-simule le profil minute par minute pour tracer la courbe + le plafond
     const st = initTissues();
     let t = 0, cur = 0;
-    let maxSaturation = 0;
+    let totalRuntime = 0;
 
     // Point de départ
     points.push({ x: t, y: 0 });
     ceilPts.push({ x: t, y: 0 });
-    
-    // Fonction pour calculer la saturation maximale des tissus
-    function getMaxSaturation(state, depthM, gf) {
-      let maxSat = 0;
-      const p = pAmb(depthM);
-      for (let i = 0; i < state.pN2.length; i++) {
-        const pn = state.pN2[i];
-        const ph = state.pHe[i];
-        const sum = pn + ph;
-        const a = (A_N2[i] * pn + A_HE[i] * ph) / (sum || 1e-9);
-        const b = (B_N2[i] * pn + B_HE[i] * ph) / (sum || 1e-9);
-        const mValue = (p / b - a) * gf;
-        const saturation = (sum / mValue) * 100;
-        if (saturation > maxSat) maxSat = saturation;
-      }
-      return maxSat;
-    }
+    runtimePoints.push({ x: t, y: 0, runtime: totalRuntime });
 
     // Descente
     let down = Math.ceil(depthM / DESCENT_RATE);
@@ -236,17 +220,14 @@ let profileChart = null;
       const next = Math.min(depthM, cur + DESCENT_RATE);
       updateConstantDepth(st, next, gas, 1);
       cur = next; t++;
+      totalRuntime++;
       points.push({ x: t, y: cur });
+      runtimePoints.push({ x: t, y: cur, runtime: totalRuntime });
       
       // Calcul du plafond
       const gf = gfL / 100;
       const c = overallCeiling(st, gf);
       ceilPts.push({ x: t, y: c });
-      
-      // Calcul de la saturation
-      const sat = getMaxSaturation(st, cur, gf);
-      saturationData.push({ x: t, y: sat });
-      if (sat > maxSaturation) maxSaturation = sat;
     }
 
     // Fond
@@ -254,17 +235,14 @@ let profileChart = null;
     annotationData.push({ phase: 'fond', start: t, end: t + bottomMin });
     for (let i = 0; i < bottomMin; i++) {
       updateConstantDepth(st, depthM, gas, 1);
-      t++; 
+      t++;
+      totalRuntime++;
       points.push({ x: t, y: depthM });
+      runtimePoints.push({ x: t, y: depthM, runtime: totalRuntime });
       
       const gf = gfL / 100;
       const c = overallCeiling(st, gf);
       ceilPts.push({ x: t, y: c });
-      
-      // Calcul de la saturation
-      const sat = getMaxSaturation(st, depthM, gf);
-      saturationData.push({ x: t, y: sat });
-      if (sat > maxSaturation) maxSaturation = sat;
     }
 
     // Reconstruire le profil de remontée en suivant le plan calculé
@@ -291,16 +269,13 @@ let profileChart = null;
         const next = Math.max(cur - ASCENT_RATE, target);
         updateConstantDepth(st, next, gas, 1);
         cur = next; t++;
+        totalRuntime++;
         points.push({ x: t, y: cur });
+        runtimePoints.push({ x: t, y: cur, runtime: totalRuntime });
         
         const gf = gfAtDepth(cur, gfL/100, gfH/100, firstStop);
         const c = overallCeiling(st, gf);
         ceilPts.push({ x: t, y: c });
-        
-        // Calcul de la saturation
-        const sat = getMaxSaturation(st, cur, gf);
-        saturationData.push({ x: t, y: sat });
-        if (sat > maxSaturation) maxSaturation = sat;
       }
     }
 
@@ -318,16 +293,13 @@ let profileChart = null;
       for (let i = 0; i < stop.time; i++) {
         updateConstantDepth(st, stop.depth, gas, 1);
         t++;
+        totalRuntime++;
         points.push({ x: t, y: stop.depth });
+        runtimePoints.push({ x: t, y: stop.depth, runtime: totalRuntime });
         
         const gf = gfAtDepth(stop.depth, gfL/100, gfH/100, firstStop);
         const c = overallCeiling(st, gf);
         ceilPts.push({ x: t, y: c });
-        
-        // Calcul de la saturation
-        const sat = getMaxSaturation(st, stop.depth, gf);
-        saturationData.push({ x: t, y: sat });
-        if (sat > maxSaturation) maxSaturation = sat;
       }
       
       // Remontée vers le prochain palier ou la surface
@@ -341,16 +313,13 @@ let profileChart = null;
           const next = Math.max(cur - ASCENT_RATE, nextStop);
           updateConstantDepth(st, next, gas, 1);
           cur = next; t++;
+          totalRuntime++;
           points.push({ x: t, y: cur });
+          runtimePoints.push({ x: t, y: cur, runtime: totalRuntime });
           
           const gf = gfAtDepth(cur, gfL/100, gfH/100, firstStop);
           const c = overallCeiling(st, gf);
           ceilPts.push({ x: t, y: c });
-          
-          // Calcul de la saturation
-          const sat = getMaxSaturation(st, cur, gf);
-          saturationData.push({ x: t, y: sat });
-          if (sat > maxSaturation) maxSaturation = sat;
         }
       }
     }
@@ -363,16 +332,13 @@ let profileChart = null;
         const next = Math.max(cur - ASCENT_RATE, 0);
         updateConstantDepth(st, next, gas, 1);
         cur = next; t++;
+        totalRuntime++;
         points.push({ x: t, y: cur });
+        runtimePoints.push({ x: t, y: cur, runtime: totalRuntime });
         
         const gf = gfAtDepth(cur, gfL/100, gfH/100, firstStop);
         const c = overallCeiling(st, gf);
         ceilPts.push({ x: t, y: c });
-        
-        // Calcul de la saturation
-        const sat = getMaxSaturation(st, cur, gf);
-        saturationData.push({ x: t, y: sat });
-        if (sat > maxSaturation) maxSaturation = sat;
       }
     }
     
@@ -452,21 +418,6 @@ let profileChart = null;
             pointHoverRadius: 5,
             fill: '+2',
             order: 1
-          },
-          {
-            label: 'Saturation tissulaire (%)',
-            data: saturationData,
-            borderColor: 'rgba(255, 165, 2, 0.8)',
-            backgroundColor: 'rgba(255, 165, 2, 0.1)',
-            borderWidth: 2,
-            borderDash: [3, 3],
-            pointRadius: 0,
-            pointHoverRadius: 4,
-            fill: false,
-            yAxisID: 'y2',
-            order: 3,
-            hidden: false
-          }
         ],
       },
       options: {
@@ -486,18 +437,9 @@ let profileChart = null;
               font: {
                 size: 12
               },
-              generateLabels: function(chart) {
-                const original = Chart.defaults.plugins.legend.labels.generateLabels;
-                const labels = original.call(this, chart);
-                
-                // Ajouter des infos supplémentaires aux labels
-                labels.forEach(label => {
-                  if (label.text === 'Saturation tissulaire (%)') {
-                    label.text = `Saturation tissulaire (Max: ${Math.round(maxSaturation)}%)`;
-                  }
-                });
-                
-                return labels;
+              filter: function(item, chart) {
+                // Filtrer les légendes pour ne pas afficher les datasets vides
+                return item.text !== '';
               }
             }
           },
@@ -525,19 +467,20 @@ let profileChart = null;
                   }
                 }
                 
-                return [`Temps: ${time} min`, phase ? `Phase: ${phase}` : ''];
+                // Ajouter le runtime
+                const runtime = runtimePoints.find(p => Math.abs(p.x - time) < 0.1)?.runtime || 0;
+                
+                return [
+                  `Temps: ${time} min`,
+                  `Runtime: ${runtime} min`,
+                  phase ? `Phase: ${phase}` : ''
+                ].filter(Boolean);
               },
               label: function(context) {
                 const label = context.dataset.label;
                 const value = context.parsed.y;
                 
-                if (label.includes('Saturation')) {
-                  const satValue = Math.round(value);
-                  let color = '#00c896';
-                  if (satValue > 100) color = '#ff4757';
-                  else if (satValue > 90) color = '#ffa502';
-                  return `${label}: ${satValue}%`;
-                } else if (label.includes('Plafond')) {
+                if (label.includes('Plafond')) {
                   return `${label}: ${Math.round(value)} m`;
                 } else {
                   return `${label}: ${Math.round(value)} m`;
@@ -620,38 +563,6 @@ let profileChart = null;
                 }
               }
               
-              // Zone de sécurité (saturation > 90%)
-              annotations.safetyZone = {
-                type: 'line',
-                yScaleID: 'y2',
-                yMin: 90,
-                yMax: 90,
-                borderColor: 'rgba(255, 165, 2, 0.3)',
-                borderWidth: 1,
-                borderDash: [5, 5],
-                label: {
-                  content: 'Limite de saturation 90%',
-                  display: true,
-                  position: 'start',
-                  backgroundColor: 'rgba(255, 165, 2, 0.7)',
-                  color: 'white',
-                  padding: 3,
-                  font: {
-                    size: 10
-                  }
-                }
-              };
-              
-              // Zone critique (saturation > 100%)
-              annotations.criticalZone = {
-                type: 'box',
-                yScaleID: 'y2',
-                yMin: 100,
-                yMax: maxSaturation + 10,
-                backgroundColor: 'rgba(255, 71, 87, 0.05)',
-                borderColor: 'transparent'
-              };
-              
               return annotations;
             })()
           }
@@ -727,33 +638,6 @@ let profileChart = null;
               }
             },
             suggestedMax: Math.ceil(depthM / 3) * 3 + 3,
-          },
-          y2: {
-            type: 'linear',
-            position: 'right',
-            min: 0,
-            max: Math.max(120, maxSaturation + 10),
-            title: {
-              display: true,
-              text: 'Saturation (%)',
-              color: '#ffa502',
-              font: {
-                size: 14,
-                weight: 'bold'
-              }
-            },
-            grid: {
-              display: false
-            },
-            ticks: {
-              color: '#ffa502',
-              font: {
-                size: 11
-              },
-              callback: function(value) {
-                return value + '%';
-              }
-            }
           }
         }
       }
@@ -807,7 +691,25 @@ let profileChart = null;
     return { valid: true };
   }
 
+  function updateRuntimeDisplay(runtime) {
+    const display = document.getElementById('runtimeDisplay');
+    const value = document.getElementById('runtimeValue');
+    if (display && value) {
+      display.classList.add('active');
+      value.textContent = `Runtime: ${runtime} min`;
+      
+      // Animation du compteur
+      value.style.animation = 'none';
+      setTimeout(() => {
+        value.style.animation = 'countUp 0.6s ease-out';
+      }, 10);
+    }
+  }
+  
   function render(plan, isValid) {
+    // Mettre à jour le runtime display
+    updateRuntimeDisplay(plan.totalDiveTime);
+    
     const resultsHTML = `
       <div class="results-section">
         <div class="results-card">
@@ -818,12 +720,21 @@ let profileChart = null;
           </h3>
           <div class="tts-display">
             <div class="tts-value">${Math.round(plan.totalDiveTime)}</div>
-            <div class="tts-label">minutes</div>
+            <div class="tts-label">Temps total de plongée</div>
           </div>
-          <div style="font-size: 0.9rem; color: #666; margin-top: 10px;">
-            <strong>TTS (décompression):</strong> ${plan.tts} min | 
-            <strong>Descente:</strong> ${plan.descentTime} min | 
-            <strong>Fond:</strong> ${plan.bottomTime} min
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 20px;">
+            <div style="text-align: center; padding: 10px; background: rgba(0, 102, 204, 0.05); border-radius: 8px;">
+              <div style="font-size: 1.8rem; font-weight: 700; color: var(--primary);">${plan.descentTime}</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 5px;">Descente (min)</div>
+            </div>
+            <div style="text-align: center; padding: 10px; background: rgba(0, 168, 230, 0.05); border-radius: 8px;">
+              <div style="font-size: 1.8rem; font-weight: 700; color: var(--secondary);">${plan.bottomTime}</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 5px;">Temps fond (min)</div>
+            </div>
+            <div style="text-align: center; padding: 10px; background: rgba(0, 200, 150, 0.05); border-radius: 8px;">
+              <div style="font-size: 1.8rem; font-weight: 700; color: var(--success);">${plan.tts}</div>
+              <div style="font-size: 0.85rem; color: #666; margin-top: 5px;">Décompression (min)</div>
+            </div>
           </div>
           ${plan.stops.length === 0 ? 
             '<div class="no-stops"><i class="fas fa-check-circle"></i>Aucun palier obligatoire</div>' : 
@@ -864,17 +775,23 @@ let profileChart = null;
   }
 
   function compute() {
-    const depth = +$('depth').value;
-    const tbt = +$('tbt').value;
-    const FO2 = (+$('fo2').value) / 100;
-    const FHe = (+$('fhe').value) / 100;
-    const FN2 = 1 - FO2 - FHe;
-    const gfL = +$('gfl').value;
-    const gfH = +$('gfh').value;
-    const opts = {
-      lastStopDepth: $('last6').checked ? 6 : 3,
-      minLastStopMinutes: +$('minLast').value | 0
-    };
+    // Animation du bouton calculer
+    const goBtn = $('go');
+    goBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Calcul en cours...';
+    goBtn.disabled = true;
+    
+    setTimeout(() => {
+      const depth = +$('depth').value;
+      const tbt = +$('tbt').value;
+      const FO2 = (+$('fo2').value) / 100;
+      const FHe = (+$('fhe').value) / 100;
+      const FN2 = 1 - FO2 - FHe;
+      const gfL = +$('gfl').value;
+      const gfH = +$('gfh').value;
+      const opts = {
+        lastStopDepth: $('last6').checked ? 6 : 3,
+        minLastStopMinutes: +$('minLast').value | 0
+      };
 
     // Validation des entrées
     const validation = validateInputs();
@@ -889,11 +806,16 @@ let profileChart = null;
       return;
     }
 
-    const plan = planDive(depth, tbt, { FO2, FHe, FN2 }, gfL, gfH, opts);
-    const isValid = runSilentValidation();
-    
-    render(plan, isValid);
-    updateProfileChartWithCeiling(depth, tbt, { FO2, FHe, FN2 }, gfL, gfH, opts, plan);
+      const plan = planDive(depth, tbt, { FO2, FHe, FN2 }, gfL, gfH, opts);
+      const isValid = runSilentValidation();
+      
+      render(plan, isValid);
+      updateProfileChartWithCeiling(depth, tbt, { FO2, FHe, FN2 }, gfL, gfH, opts, plan);
+      
+      // Restaurer le bouton
+      goBtn.innerHTML = '<i class="fas fa-calculator"></i> Calculer';
+      goBtn.disabled = false;
+    }, 300);
   }
 
   function selfTest() {
@@ -988,9 +910,41 @@ let profileChart = null;
   document.getElementById('go').addEventListener('click', compute);
   document.getElementById('selftest').addEventListener('click', selfTest);
 
+  // Animations au scroll
+  const observerOptions = {
+    threshold: 0.1,
+    rootMargin: '0px 0px -50px 0px'
+  };
+  
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.style.opacity = '1';
+        entry.target.style.transform = 'translateY(0)';
+      }
+    });
+  }, observerOptions);
+  
   // Calcul initial au chargement
   window.addEventListener('load', () => {
+    // Observer les sections pour les animations
+    document.querySelectorAll('.input-section, .results-card').forEach(el => {
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(20px)';
+      el.style.transition = 'all 0.6s ease-out';
+      observer.observe(el);
+    });
+    
     // Petite animation de chargement
     setTimeout(compute, 100);
+  });
+  
+  // Effet de parallaxe sur le header
+  window.addEventListener('scroll', () => {
+    const scrolled = window.pageYOffset;
+    const header = document.querySelector('.header');
+    if (header) {
+      header.style.transform = `translateY(${scrolled * 0.5}px)`;
+    }
   });
 })();
